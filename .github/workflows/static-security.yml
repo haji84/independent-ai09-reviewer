@@ -18,4 +18,5 @@ jobs:
           node --check src/ai09-independent.mjs
           node --check src/review-schema.mjs
           node --check src/receipt-coverage.mjs
-          node --test tests/review-schema.test.mjs tests/receipt-coverage.test.mjs
+          node --check src/receipt-ledger.mjs
+          node --test tests/review-schema.test.mjs tests/receipt-coverage.test.mjs tests/receipt-ledger.test.mjs
