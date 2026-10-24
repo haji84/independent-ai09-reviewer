@@ -2,6 +2,7 @@ name: AI09 public boundary CI (no source or secrets)
 on:
   pull_request:
     paths:
+      - AGENTS.md
       - public_runner.py
       - tests/test_public_runner.py
       - .github/workflows/ai09-public-boundary-ci.yml
