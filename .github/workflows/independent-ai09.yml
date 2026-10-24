@@ -1,0 +1,78 @@
+name: Independent AI09 Candidate Proof
+on:
+  push:
+    branches:
+      - audit/remote-lite-1832
+    paths:
+      - src/ai09-independent.mjs
+      - .github/workflows/independent-ai09.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: independent-ai09-candidate
+  cancel-in-progress: true
+
+jobs:
+  reviewer-candidate:
+    if: github.repository == 'haji84/independent-ai09-reviewer'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      AI09_BASE_SHA: 99d4e1568fa15c7cab48fc343cd5521c0f8c9512
+      AI09_HEAD_SHA: eb1c17bcb357d93159c195efa1ca66202c536117
+      OLLAMA_HOST: 127.0.0.1:11434
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+    steps:
+      - name: Checkout ONLY independent reviewer source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+      - name: Reject unexpected runner and invalid JS
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$GITHUB_REPOSITORY" = haji84/independent-ai09-reviewer
+          test "$GITHUB_REF" = refs/heads/audit/remote-lite-1832
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          node --check src/ai09-independent.mjs
+      - name: Install SHA256-pinned Ollama on disposable hosted runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 2 --max-time 300 \
+            https://github.com/ollama/ollama/releases/download/v0.34.0/ollama-linux-amd64.tar.zst \
+            -o "$RUNNER_TEMP/ollama-linux-amd64.tar.zst"
+          echo "cf95886728959aa09910bb34de5cca1cc5a8f68003b5597197d3f2c2d57c0804  $RUNNER_TEMP/ollama-linux-amd64.tar.zst" | sha256sum -c -
+          sudo tar --zstd -xf "$RUNNER_TEMP/ollama-linux-amd64.tar.zst" -C /usr
+      - name: Start loopback Ollama Qwen model
+        shell: bash
+        run: |
+          set -euo pipefail
+          ollama serve >"$RUNNER_TEMP/ai09-ollama.log" 2>&1 &
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1
+          timeout 480s ollama pull qwen2.5-coder:3b
+      - name: Source-only independent model canary
+        shell: bash
+        run: node src/ai09-independent.mjs
+      - name: Preserve digest-only evidence; not an approval
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai09-independent-candidate-proof
+          path: ai09-independent-proof.json
+          if-no-files-found: warn
+          retention-days: 3
