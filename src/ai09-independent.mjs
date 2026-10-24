@@ -154,6 +154,12 @@ async function run(){
     console.log('AI09_MODEL_SLICE='+entry.id+' STATUS='+entry.verdict+
       ' RESPONSE_SHA256='+entry.responseSha256);
   }
+  const after=git('ls-remote','origin','refs/heads/main','refs/heads/feat/1831-remote-lite-manual-boundary');
+  const live=after.trim().split('\n').map(x=>x.split(/\s+/u));
+  if(!live.some(x=>x[0]===base&&x[1]==='refs/heads/main')||
+     !live.some(x=>x[0]===head&&x[1]==='refs/heads/feat/1831-remote-lite-manual-boundary'))
+    fail('AI09_SOURCE_MOVED_DURING_REVIEW');
+  // A canary never counts as full review or independent GitHub approval.
   review.status='PARTIAL_MODEL_REVIEW_PENDING';
 }
 try{await run();}
