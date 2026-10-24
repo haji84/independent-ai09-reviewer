@@ -60,4 +60,12 @@ always fails with `FROZEN_PLAN_SCHEMA_UNVERIFIED`. Windows capture is disabled;
 Linux CI must verify process/container behavior. The production pilot HOLD stays
 in place. See the [architecture and activation gaps](docs/architecture/private-execution-proposal.md).
 
+`source_archive.py` provides bounded, data-only ZIP reading with the fixed
+original hash and 47-file requirement. It preserves exact binary contents,
+checks headers/ranges/DEFLATE EOF/CRC and returns immutable data without file
+extraction or code execution. Its tests use public toy archives. The actual
+fixed ZIP has not been opened or modified; original compatibility and the
+104-chunk mapping remain unverified. Opaque plan-byte preservation does not
+parse, authenticate or regenerate a plan.
+
 The runner uses local Ollama `qwen3:1.7b` with no paid hosted model APIs. Model answers are unverified until provenance, all chunks, and findings are independently reproduced. No automatic approval or merge.

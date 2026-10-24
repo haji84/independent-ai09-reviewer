@@ -72,7 +72,7 @@ requires positive host-owned container-stop verification before returning bytes.
 The controller seals only those verified bytes, with a public synthetic key.
 
 This is a synthetic contract implementation, not frozen-plan compatibility or
-actual inference provenance. Original archive parsing, original-plan adaptation,
+actual inference provenance. Original archive compatibility, original-plan adaptation,
 verified Ollama/model launch, inventory/receipt timestamps and production
 orchestration remain activation gaps. No REAL evidence promotion exists. Windows
 capture fails closed; process/container behavior requires Linux CI. Tests do not
@@ -109,3 +109,53 @@ approval, successful latest-head CI, account storage/budget checks and separatel
 authorized key/ciphertext installation remain distinct gates. Public standard
 runner minutes are free under current GitHub documentation; artifact/storage
 usage and account limits still require verification before private evidence runs.
+
+## Original-plan location investigation (2026-10-25 JST)
+
+The owner requested autonomous investigation before asking for a location.
+Read-only inspection covered all three remote branches, all 31 then-reachable
+commits including historical/deleted paths, both existing PRs and their comments,
+Issue #3 and comments, and exact filename/ZIP/SHA searches across accessible
+owner repositories/issues/PRs. The linked AI-/1831 issue's 95 comments identify
+PR #2 as a separate confidential 104-chunk effort, not the older Node reviewer.
+No original plan, schema, reviewer.py or checkpoint_runner.py was found in that
+target Git history. Searches found the plan reference only in Issue #3/current
+bootstrap records. GitHub code search covers indexed default branches; the
+target's other branches were additionally inspected through Git directly.
+
+The concrete historical reference is `evidence/frozen-review-plan.json` in
+[the original pilot workflow](https://github.com/haji84/independent-ai09-reviewer/blob/28c9d071c87f1eb4cdbc1c2f46ab96239b4e0196/.github/workflows/ai09-public-safe-pilot.yml).
+It invokes a private `reviewer.py plan` and compares its output, but defines no
+keys, chunk ordering, byte/newline rules or expected original-plan hash. The
+encrypted payload is not in Git. This is evidence of an unresolved location,
+not proof that a specification does not exist outside the inspected sources.
+
+Additional implementation, within the approved data-only architecture:
+
+- Add `source_archive.py` and `tests/test_source_archive.py`: hardcoded original
+  ZIP hash, bounded central-directory preflight without ZipFile allocation,
+  bounded STORED/DEFLATED reads, exact path/byte preservation, no extraction,
+  imports, execution or newline/encoding normalization. Validate 47 regular
+  files without guessing the 104-chunk mapping. Explicit directories are data.
+- Preserve opaque original-plan bytes/hash under a size bound without claiming
+  schema validity. Keep `load_frozen_plan` blocked. Tests use public toy ZIPs
+  and patch the hash only in test code; no production hash-override argument.
+- Run adversarial tests, separate-model review, latest-head CI and Issue #3
+  write-back. No private inputs, keys, real-model runs or activation in this step.
+
+`source_archive.py` now implements this read-only data stage using a checked ZIP
+subset parser, without allocating ZipFile objects. It also validates local
+headers/data descriptors, non-overlapping contiguous compressed ranges, complete
+raw-DEFLATE EOF/size/CRC, and rejects unused/trailing compressed bytes. All
+source file bytes remain undecoded and immutable; ZIP filenames are decoded as
+required by the ZIP format but never normalized. Opaque plan hashing is neither
+authentication nor schema validation. No workflow activation is connected to
+this reader, and original fixed-ZIP compatibility remains untested.
+
+Supported structure intentionally excludes ZIP64/multidisk, encryption, special
+files, other compression, concatenated/self-extracting ZIPs, unexplained gaps,
+and ambiguous EOCD signatures in comments. If the original uses an unsupported
+structure, stop and review the parser; do not rewrite the original archive.
+Public toy tests cover both streaming data descriptors and seekable ZIPs,
+binary/newline preservation and adversarial structures. Independent advisory
+review found no concrete defect; latest CI evidence belongs in Issue #3.

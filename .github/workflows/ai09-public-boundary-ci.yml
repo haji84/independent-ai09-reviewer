@@ -5,6 +5,7 @@ on:
       - AGENTS.md
       - public_runner.py
       - data_driver.py
+      - source_archive.py
       - confidential_capture.py
       - loopback_client.py
       - requirements-public.txt
@@ -17,6 +18,7 @@ on:
       - tests/fixtures/sandbox_guest.py
       - tools/data_driver_probe.py
       - tests/test_data_driver.py
+      - tests/test_source_archive.py
       - tests/test_data_driver_probe.py
       - tests/test_confidential_capture.py
       - tests/test_loopback_client.py
