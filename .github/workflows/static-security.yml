@@ -17,4 +17,5 @@ jobs:
       - run: |
           node --check src/ai09-independent.mjs
           node --check src/review-schema.mjs
-          node --test tests/review-schema.test.mjs
+          node --check src/receipt-coverage.mjs
+          node --test tests/review-schema.test.mjs tests/receipt-coverage.test.mjs
