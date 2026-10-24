@@ -46,4 +46,10 @@ Tests use synthetic public subjects only; the frozen ZIP is never needed. These
 tests and a public-bootstrap model review do not count as private-subject review
 receipts or formal GitHub approval.
 
+The separate Linux CI job runs `python3 -I tools/sandbox_probe.py` using Docker
+and public synthetic fixtures. Missing Docker is a failure, not a skipped PASS.
+This experiment does not activate private execution. See the
+[data-only architecture proposal](docs/architecture/private-execution-proposal.md)
+for the owner decision, tested scope and remaining proof gaps.
+
 The runner uses local Ollama `qwen3:1.7b` with no paid hosted model APIs. Model answers are unverified until provenance, all chunks, and findings are independently reproduced. No automatic approval or merge.
