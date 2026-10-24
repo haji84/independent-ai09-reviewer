@@ -12,6 +12,8 @@ SUBJECT='universal-ai-development-v0.5-review-candidate.zip'
 MAX_ENCRYPTED=5_000_000
 MAX_EXPANDED=10_000_000
 MAX_ENTRIES=80
+READ_BLOCK=65_536
+MAX_EVIDENCE_FILE=100_000
 
 def key_from_env():
     value=os.environ.get('AI09_BUNDLE_KEY_B64','')
@@ -26,6 +28,8 @@ def derived_key(master,purpose):
                 salt=b'AI09-SEPARATED-KEYS-v1',info=purpose).derive(master)
 
 def seal(content,master,purpose):
+    if len(content)+len(MAGIC)+12+16>MAX_ENCRYPTED:
+        raise ValueError('OVERSIZE_ENCRYPTED_PAYLOAD')
     nonce=os.urandom(12)
     return MAGIC+nonce+AESGCM(derived_key(master,purpose)).encrypt(
         nonce,content,MAGIC+purpose)
@@ -38,10 +42,13 @@ def unseal(blob,master,purpose):
         nonce,blob[len(MAGIC)+12:],MAGIC+purpose)
 
 def safe_member(item):
+    if item.compress_type not in (zipfile.ZIP_STORED,zipfile.ZIP_DEFLATED):
+        raise ValueError('UNSUPPORTED_BUNDLE_COMPRESSION')
     name=item.filename
     parts=name.split('/')
     mode=item.external_attr>>16
-    if (not name or name.startswith('/') or name.endswith('/') or
+    if (item.orig_filename!=name or any(ord(c)<32 or ord(c)==127 for c in name) or
+        not name or name.startswith('/') or name.endswith('/') or
         '\\' in name or ':' in name or any(x in ('','.','..') for x in parts) or
         PurePosixPath(name).as_posix()!=name):
         raise ValueError('UNSAFE_BUNDLE_PATH')
@@ -61,13 +68,28 @@ def open_bundle(encrypted_file,destination):
         names=[x.filename for x in infos]
         if len(set(names))!=len(names) or len(set(x.casefold() for x in names))!=len(names):
             raise ValueError('DUPLICATE_BUNDLE_ENTRY')
+        folded={name.casefold() for name in names}
+        for item in infos:
+            safe_member(item)
+            if any(parent.as_posix().casefold() in folded
+                   for parent in PurePosixPath(item.filename).parents):
+                raise ValueError('BUNDLE_FILE_DIRECTORY_COLLISION')
+        if sum(item.file_size for item in infos)>MAX_EXPANDED:
+            raise ValueError('OVERSIZE_BUNDLE_EXPANSION')
         extracted={}
         total=0
         for item in infos:
-            safe_member(item)
-            total+=item.file_size
-            if total>MAX_EXPANDED: raise ValueError('OVERSIZE_BUNDLE_EXPANSION')
-            extracted[item.filename]=z.read(item)
+            content=bytearray()
+            with z.open(item) as entry:
+                while True:
+                    block=entry.read(READ_BLOCK)
+                    if not block:break
+                    content.extend(block)
+                    total+=len(block)
+                    if len(content)>item.file_size or total>MAX_EXPANDED:
+                        raise ValueError('OVERSIZE_BUNDLE_EXPANSION')
+            if len(content)!=item.file_size:raise ValueError('BUNDLE_SIZE_MISMATCH')
+            extracted[item.filename]=bytes(content)
     subject=extracted.get(SUBJECT)
     if subject is None or hashlib.sha256(subject).hexdigest()!=FROZEN_SHA:
         raise ValueError('FROZEN_SUBJECT_INTEGRITY_FAILURE')
@@ -84,21 +106,29 @@ def seal_evidence(source,output):
     if not source.is_dir() or source.is_symlink():
         raise ValueError('INVALID_EVIDENCE_SOURCE')
     outputs=[]
+    total=0
     for p in sorted(source.iterdir()):
         if (not p.is_file() or p.is_symlink() or
-            not re.fullmatch(r'chunk-\d{3}\.json|model-inventory\.json|pilot-summary\.json',p.name)):
+            not re.fullmatch(r'chunk-[0-9]{3}\.json|model-inventory\.json|pilot-summary\.json',p.name)):
             raise ValueError('UNEXPECTED_EVIDENCE_FILE')
-        if p.stat().st_size>100_000:
+        if p.name.startswith('chunk-') and int(p.name[6:9])>=104:
+            raise ValueError('UNEXPECTED_CHUNK_NUMBER')
+        if p.stat().st_size>MAX_EVIDENCE_FILE:
             raise ValueError('OVERSIZE_EVIDENCE_FILE')
-        outputs.append(p)
-    if not outputs or not any(p.name.startswith('chunk-') for p in outputs):
+        with p.open('rb') as f:content=f.read(MAX_EVIDENCE_FILE+1)
+        total+=len(content)
+        if len(content)>MAX_EVIDENCE_FILE or total>MAX_EXPANDED:
+            raise ValueError('OVERSIZE_EVIDENCE_FILE')
+        outputs.append((p.name,content))
+    if not outputs or not any(name.startswith('chunk-') for name,_ in outputs):
         raise ValueError('NO_REAL_MODEL_RECEIPTS')
     mem=io.BytesIO()
     with zipfile.ZipFile(mem,'w',compression=zipfile.ZIP_DEFLATED) as z:
-        for p in outputs:z.write(p,p.name)
+        for name,content in outputs:z.writestr(name,content)
+    encrypted=seal(mem.getvalue(),key_from_env(),b'CONFIDENTIAL-REVIEW-EVIDENCE')
     output.parent.mkdir(parents=True,exist_ok=True)
     with output.open('xb') as f:
-        f.write(seal(mem.getvalue(),key_from_env(),b'CONFIDENTIAL-REVIEW-EVIDENCE'))
+        f.write(encrypted)
     output.chmod(0o600)
     return len(outputs)
 
