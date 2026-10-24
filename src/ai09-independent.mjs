@@ -88,9 +88,12 @@ async function run(){
   git('fetch','--quiet','--no-tags','origin','main','feat/1831-remote-lite-manual-boundary');
   const now=git('ls-remote','origin','refs/heads/main','refs/heads/feat/1831-remote-lite-manual-boundary');
   const refs=now.trim().split('\n').map(x=>x.split(/\s+/u));
-  if(!refs.some(x=>x[0]===base&&x[1]==='refs/heads/main')||
-     !refs.some(x=>x[0]===head&&x[1]==='refs/heads/feat/1831-remote-lite-manual-boundary'))
-    fail('AI09_HEAD_MOVED');
+  const liveHead=refs.find(x=>x[1]==='refs/heads/feat/1831-remote-lite-manual-boundary')?.[0];
+  if(!refs.some(x=>x[0]===base&&x[1]==='refs/heads/main')||!liveHead)
+    fail('AI09_MAIN_MOVED_OR_TARGET_MISSING');
+  // Immutable historical head may still be audited, but never promoted as current.
+  review.observedHeadAtStart=liveHead;
+  review.staleAtStart=liveHead!==head;
   for(const sha of [base,head])if(git('cat-file','-t',sha).trim()!=='commit')
     fail('AI09_COMMIT_MISSING');
   try{git('merge-base','--is-ancestor',base,head);}
@@ -156,11 +159,14 @@ async function run(){
   }
   const after=git('ls-remote','origin','refs/heads/main','refs/heads/feat/1831-remote-lite-manual-boundary');
   const live=after.trim().split('\n').map(x=>x.split(/\s+/u));
-  if(!live.some(x=>x[0]===base&&x[1]==='refs/heads/main')||
-     !live.some(x=>x[0]===head&&x[1]==='refs/heads/feat/1831-remote-lite-manual-boundary'))
-    fail('AI09_SOURCE_MOVED_DURING_REVIEW');
-  // A canary never counts as full review or independent GitHub approval.
-  review.status='PARTIAL_MODEL_REVIEW_PENDING';
+  const finalHead=live.find(x=>x[1]==='refs/heads/feat/1831-remote-lite-manual-boundary')?.[0];
+  if(!live.some(x=>x[0]===base&&x[1]==='refs/heads/main')||!finalHead)
+    fail('AI09_MAIN_MOVED_OR_TARGET_MISSING');
+  review.observedHeadAtEnd=finalHead;
+  review.staleAtEnd=finalHead!==head;
+  // A stale result is strictly historical and must not certify the latest PR.
+  review.status=review.staleAtEnd?'HISTORICAL_PARTIAL_MODEL_REVIEW_ONLY':
+    'PARTIAL_MODEL_REVIEW_PENDING';
 }
 try{await run();}
 catch(e){review.reason=/^AI09_[A-Z0-9_]+$/u.test(e?.message??'')?e.message:'AI09_UNHANDLED_ERROR';}
