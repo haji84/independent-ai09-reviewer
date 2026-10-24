@@ -135,6 +135,7 @@ def _name(name):
 def _selected(name):
     parts=name.split('/')
     cpu_names=('libggml-base.so','libggml-cpu','libggml.so','libllama.so','libmtmd.so',
+               'libllama-server-impl.so','libllama-common.so',
                'libgomp.so','libstdc++.so','libgcc_s.so','libomp.so','libopenblas.so')
     return (name=='bin/ollama' or (parts[:2]==['lib','ollama'] and
             ((len(parts)==3 and (parts[2] in ('llama-server','GO_LICENSE') or
@@ -202,7 +203,8 @@ def cpu_files(stream,deadline):
         require(target in files,'PUBLIC_TAR_ALIAS')
         selected_size+=len(files[target]);require(selected_size<=MAX_CPU_BYTES,'PUBLIC_CPU_LIMIT')
         files[name]=files[target]
-    require('bin/ollama' in files and 'lib/ollama/llama-server' in files,'PUBLIC_CPU_INCOMPLETE')
+    require({'bin/ollama','lib/ollama/llama-server','lib/ollama/libllama-server-impl.so',
+             'lib/ollama/libllama-common.so'} <= files.keys(),'PUBLIC_CPU_INCOMPLETE')
     remaining(deadline)
     return files
 

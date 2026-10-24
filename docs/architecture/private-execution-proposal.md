@@ -191,3 +191,22 @@ cryptographic model-execution attestation or formal GitHub approval.
 Regular local filesystem operations are assumed to complete: deadline checks
 surround bounded reads/writes/hashing, but cannot interrupt a blocked kernel
 filesystem call. Network downloads use a separately timed child process.
+
+The first public-model run, Actions40125417922 at a8d95b9, passed all76 Linux
+boundary tests and both existing synthetic probes, but failed during the model
+response phase. It does not establish successful inference. Different-model
+review reproduced two compatibility defects: omitted shared CPU libraries
+`libllama-server-impl.so`/`libllama-common.so`, and rejection of the pinned API's
+optional `prompt_eval_cached_count`. The original loader error was discarded,
+so attribution of that CI failure to the missing libraries remains an inference.
+Static ELF parsing of the SHA-verified official tar independently confirms
+llama-server's DT_NEEDED entries include libllama-server-impl.so and
+libllama-common.so.0. No extracted binary was executed on the host.
+
+The final bounded corrective attempt adds only those CPU library families and
+requires their presence, permits only an exact integer cached count in the
+interval0..prompt_eval_count, and separates transport/schema failure codes
+without exposing response or exception text. Regression tests fail before the
+fix and pass afterward; unknown fields and all resource/security limits remain
+enforced. If the next CI fails, stop automatic retries and record BLOCKED in
+Issue #3. Successful public toy inference would still leave private receipts0/104.

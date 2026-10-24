@@ -18,10 +18,12 @@ from data_driver import GateError
 MANIFEST=base64.b64decode('eyJzY2hlbWFWZXJzaW9uIjoyLCJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi92bmQuZG9ja2VyLmRpc3RyaWJ1dGlvbi5tYW5pZmVzdC52Mitqc29uIiwiY29uZmlnIjp7Im1lZGlhVHlwZSI6ImFwcGxpY2F0aW9uL3ZuZC5kb2NrZXIuY29udGFpbmVyLmltYWdlLnYxK2pzb24iLCJkaWdlc3QiOiJzaGEyNTY6NTE3Y2NhZmYwMmZlOWY5OTcxOGFiMmY0NzhlNjExYWEyODEzYzM2MjYzZWVlZDg2YzI0MjdiYzEyMmQxNGFkOCIsInNpemUiOjQ4N30sImxheWVycyI6W3sibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vdm5kLm9sbGFtYS5pbWFnZS5tb2RlbCIsImRpZ2VzdCI6InNoYTI1NjozZDBiNzkwNTM0ZmU0Yjc5NTI1ZmMzNjkyOTUwNDA4ZGNhNDExNzE2NzZlZDdlMjFkYjU3YWY1YzY1ZWY2YWI2Iiwic2l6ZSI6MTM1OTI3OTc3Nn0seyJtZWRpYVR5cGUiOiJhcHBsaWNhdGlvbi92bmQub2xsYW1hLmltYWdlLnRlbXBsYXRlIiwiZGlnZXN0Ijoic2hhMjU2OmFlMzcwZDg4NGYxMDhkMTZlN2NjOGZkNTI1OWViYzU3NzNhMGFmYTZlMDc4YjExZjRlZDdlMzlhMjdlMGRmYzQiLCJzaXplIjoxNzIzfSx7Im1lZGlhVHlwZSI6ImFwcGxpY2F0aW9uL3ZuZC5vbGxhbWEuaW1hZ2UubGljZW5zZSIsImRpZ2VzdCI6InNoYTI1NjpkMThhNWNjNzFiODRiYzRhZjM5NGEzMTExNmJkMzkzMmI0MjI0MWRlNzBjNzdkMmI3NmQ2OWEzMTRlYzhhYTEyIiwic2l6ZSI6MTEzMzh9LHsibWVkaWFUeXBlIjoiYXBwbGljYXRpb24vdm5kLm9sbGFtYS5pbWFnZS5wYXJhbXMiLCJkaWdlc3QiOiJzaGEyNTY6Y2ZmM2YzOTVlZjM3NTZhYjYzZTU4YjBhZDFiMzJiYjZmODAyOTA1Y2FlMTQ3MmU2YTEyMDM0ZTQyNDZmYmJkYiIsInNpemUiOjEyMH1dfQ==')
 
 
-def tar_bytes(extras=()):
+def tar_bytes(extras=(),omit=()):
     stream=io.BytesIO()
     with tarfile.open(fileobj=stream,mode='w',format=tarfile.USTAR_FORMAT) as archive:
-        for name in ('bin/ollama','lib/ollama/llama-server','lib/ollama/libggml-base.so.0'):
+        for name in ('bin/ollama','lib/ollama/llama-server','lib/ollama/libggml-base.so.0',
+                     'lib/ollama/libllama-server-impl.so','lib/ollama/libllama-common.so'):
+            if name in omit:continue
             item=tarfile.TarInfo(name);item.size=6
             archive.addfile(item,io.BytesIO(b'PUBLIC'))
         alias=tarfile.TarInfo('lib/ollama/libggml-base.so')
@@ -71,7 +73,8 @@ class RuntimeAssetsTest(unittest.TestCase):
         files=assets.cpu_files(io.BytesIO(tar_bytes()),time.monotonic()+5)
         self.assertEqual(files['lib/ollama/libggml-base.so'],b'PUBLIC')
         self.assertEqual(set(files),{'bin/ollama','lib/ollama/llama-server',
-                                    'lib/ollama/libggml-base.so.0','lib/ollama/libggml-base.so'})
+                                    'lib/ollama/libggml-base.so.0','lib/ollama/libggml-base.so',
+                                    'lib/ollama/libllama-server-impl.so','lib/ollama/libllama-common.so'})
     def test_gpu_or_mlx_root_files_are_not_selected_as_cpu(self):
         extras=[]
         for name in ('lib/ollama/ollama-mlx-cuda','lib/ollama/libggml-cuda.so'):
@@ -79,6 +82,16 @@ class RuntimeAssetsTest(unittest.TestCase):
         files=assets.cpu_files(io.BytesIO(tar_bytes(extras)),time.monotonic()+5)
         self.assertNotIn('lib/ollama/ollama-mlx-cuda',files)
         self.assertNotIn('lib/ollama/libggml-cuda.so',files)
+
+    def test_cpu_server_shared_implementation_and_common_dependencies_are_retained(self):
+        # Ollama v0.34.0's shared CPU build links these two libraries.
+        names=('lib/ollama/libllama-server-impl.so','lib/ollama/libllama-common.so')
+        files=assets.cpu_files(io.BytesIO(tar_bytes()),time.monotonic()+5)
+        for name in names:
+            self.assertEqual(files[name],b'PUBLIC')
+            with self.assertRaisesRegex(GateError,'^PUBLIC_CPU_INCOMPLETE$'):
+                assets.cpu_files(io.BytesIO(tar_bytes(omit=(name,))),time.monotonic()+5)
+        self.assertFalse(assets._selected('lib/ollama/libllama-quantize-impl.so'))
 
     def test_tar_unsafe_paths_links_special_records_and_duplicates_are_rejected(self):
         variants=[]

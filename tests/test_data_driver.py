@@ -96,6 +96,19 @@ class DataDriverTest(unittest.TestCase):
                     driver.record_exchange(batch().chunks[0], driver.build_request(batch().chunks[0]),
                                            driver.encode_json(changed))
 
+    def test_pinned_ollama_optional_cached_count_is_bounded_and_exactly_typed(self):
+        chunk=batch().chunks[0];valid=json.loads(response())
+        for count in (0,1,valid['prompt_eval_count']):
+            raw=driver.encode_json(dict(valid,prompt_eval_cached_count=count))
+            record=driver.record_exchange(chunk,driver.build_request(chunk),raw)
+            self.assertEqual(base64.b64decode(record['response_b64']),raw)
+        for count in (True,False,-1,valid['prompt_eval_count']+1,None,'0',1.5):
+            with self.subTest(count=count):
+                with self.assertRaises(driver.GateError):
+                    driver.validate_response(driver.encode_json(dict(valid,prompt_eval_cached_count=count)),chunk)
+        with self.assertRaises(driver.GateError):
+            driver.validate_response(driver.encode_json(dict(valid,unrecognized_metric=0)),chunk)
+
     def test_untrusted_findings_cannot_escape_chunk_or_grant_approval(self):
         valid = json.loads(response())
         good = {'file':'public.py','start_line':7,'end_line':7,

@@ -42,10 +42,11 @@ def experiment():
         expected=driver.Batch(sys.argv[1],int(sys.argv[2]),sys.argv[3],
                               driver.digest(b'PUBLIC-TOY-SOURCE'),driver.digest(b'PUBLIC-TOY-NO-PLAN'),(chunk,))
         request=driver.build_request(chunk)
-        error_code='PUBLIC_MODEL_RESPONSE_REJECTED'
+        error_code='PUBLIC_MODEL_TRANSPORT_FAILED'
         started=time.time_ns()
         response=post_json(request,deadline=deadline)
         finished=time.time_ns()
+        error_code='PUBLIC_MODEL_RESPONSE_REJECTED'
         record=driver.record_exchange(chunk,request,response)
         error_code='PUBLIC_MODEL_INVENTORY_MISMATCH'
         version_after=get_json('/api/version',deadline=deadline)

@@ -185,11 +185,15 @@ def validate_response(raw, chunk):
     required = {'model','created_at','response','done','done_reason','total_duration',
                 'load_duration','prompt_eval_count','prompt_eval_duration',
                 'eval_count','eval_duration'}
-    require(type(value) is dict and required <= set(value) <= required | {'context','thinking'})
+    require(type(value) is dict and required <= set(value) <=
+            required | {'context','thinking','prompt_eval_cached_count'})
     require(value['model'] == MODEL and value['done'] is True and value['done_reason'] == 'stop')
     for key in ('total_duration','prompt_eval_count','prompt_eval_duration','eval_count','eval_duration'):
         require(positive_int(value[key]))
     require(type(value['load_duration']) is int and 0 <= value['load_duration'] < 2**63)
+    if 'prompt_eval_cached_count' in value:
+        require(type(value['prompt_eval_cached_count']) is int and
+                0 <= value['prompt_eval_cached_count'] <= value['prompt_eval_count'])
     stamp = value['created_at']
     require(type(stamp) is str and len(stamp) <= 40 and stamp.endswith('Z'))
     try:
