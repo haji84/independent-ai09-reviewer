@@ -48,8 +48,16 @@ receipts or formal GitHub approval.
 
 The separate Linux CI job runs `python3 -I tools/sandbox_probe.py` using Docker
 and public synthetic fixtures. Missing Docker is a failure, not a skipped PASS.
-This experiment does not activate private execution. See the
-[data-only architecture proposal](docs/architecture/private-execution-proposal.md)
-for the owner decision, tested scope and remaining proof gaps.
+The following `tools/data_driver_probe.py` exercises eight public toy chunks
+against a fake loopback server, privately captures the binary response, verifies
+it against independent host expectations and encrypts the exact verified bytes.
+Tampered context, trailing output, overflow and an escaped child must fail.
+All evidence is explicitly SYNTHETIC; actual-model counts remain zero.
+
+The owner approved this data-only implementation and public synthetic tests.
+The original frozen-plan schema and chunk rules are unavailable, so its adapter
+always fails with `FROZEN_PLAN_SCHEMA_UNVERIFIED`. Windows capture is disabled;
+Linux CI must verify process/container behavior. The production pilot HOLD stays
+in place. See the [architecture and activation gaps](docs/architecture/private-execution-proposal.md).
 
 The runner uses local Ollama `qwen3:1.7b` with no paid hosted model APIs. Model answers are unverified until provenance, all chunks, and findings are independently reproduced. No automatic approval or merge.

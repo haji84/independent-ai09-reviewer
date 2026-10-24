@@ -1,10 +1,12 @@
-# Private execution proposal — owner gate required
+# Data-only private execution — implementation approved, activation closed
 
-Status: DRAFT, NOT AUTHORIZED FOR PRIVATE DATA. Authority: Issue #3.
+Status: owner approved the data-only design and public implementation/synthetic
+tests in this task on 2026-10-25 JST. NOT AUTHORIZED FOR PRIVATE DATA.
+Authority: Issue #3; implementation approval is not final DESIGN_APPROVAL.
 The production pilot admission failure remains unchanged. Counts remain 0/8 and
 0/104. No new model/provider, credential, billing, permission or merge authority.
 
-## Decision proposed for approval
+## Approved implementation direction
 
 Replace execution of encrypted Python with a public, reviewed, data-only driver.
 The driver reads the original frozen ZIP and authenticated chunk plan as bounded
@@ -59,21 +61,50 @@ logs, parent/descendant shutdown and a forced wall-time stop. Missing Docker or
 unexpected controls fails the Linux job. No model, private source, secret, actual
 receipt or artifact upload exists in this experiment.
 
-It does not implement the proposed data-only driver or bounded attach channel,
-prove all resource-exhaustion cases, certify isolation against kernel exploits,
-or establish actual model inference. Windows unit tests validate the inspection
-policy only; Linux Docker integration must pass separately.
+The additional `tools/data_driver_probe.py` uses eight PUBLIC toy chunks and a
+fake loopback HTTP server, not a model. It exercises normal capture/verification/
+in-memory encryption, swapped attempt, trailing JSON, output overflow and an
+escaped child/timeout. It uses the same inspected Docker policy and never
+exports an artifact or raw pipe. `data_driver.py` reconstructs exact requests
+from independent host expectations. `loopback_client.py` bounds HTTP headers,
+bodies and the total deadline. `confidential_capture.py` discards stderr and
+requires positive host-owned container-stop verification before returning bytes.
+The controller seals only those verified bytes, with a public synthetic key.
+
+This is a synthetic contract implementation, not frozen-plan compatibility or
+actual inference provenance. Original archive parsing, original-plan adaptation,
+verified Ollama/model launch, inventory/receipt timestamps and production
+orchestration remain activation gaps. No REAL evidence promotion exists. Windows
+capture fails closed; process/container behavior requires Linux CI. Tests do not
+prove all resource exhaustion or isolation against kernel/daemon compromise.
 
 References: [network none](https://docs.docker.com/engine/network/drivers/none/),
 [container controls](https://docs.docker.com/engine/containers/run/),
 [tmpfs lifetime/swap](https://docs.docker.com/engine/storage/tmpfs/),
 [copy limitations](https://docs.docker.com/reference/cli/docker/container/cp/),
-[logging](https://docs.docker.com/engine/logging/configure/).
+[logging](https://docs.docker.com/engine/logging/configure/),
+[Ollama generate body contract](https://docs.ollama.com/api/generate).
 
-## Approval still required
+## Bounded implementation plan
 
-The owner must approve this data-only architecture before private runtime
-implementation/activation. Main/workflow protection, legitimate separate GitHub
+1. Test strict bounded JSON, a data-only chunk/request contract and independent
+   host receipt verification. Host expectations, not worker fields, determine
+   run/attempt/commit, original source/plan hashes, chunk bytes and request options.
+2. Implement Linux-only bounded binary capture. Return nothing until the
+   host-owned Docker identity is confirmed stopped; timeout, excess output and
+   teardown uncertainty fail closed. Windows capture is unavailable.
+3. Exercise a fake loopback model inside the existing offline Docker policy,
+   capture without daemon logs, verify exact bytes and encrypt those same bytes
+   in memory. The evidence class is SYNTHETIC and cannot become REAL by changing
+   a worker field. No private inputs or model downloads are part of this test.
+4. Obtain a different-model public-code review and latest-head CI. Preserve the
+   pilot HOLD. The production plan adapter unconditionally raises
+   FROZEN_PLAN_SCHEMA_UNVERIFIED until the original schema and chunk rules are
+   supplied and validated; synthetic fixtures are not compatibility evidence.
+
+## Approval still required for activation
+
+Private activation, legitimate separate GitHub
 approval, successful latest-head CI, account storage/budget checks and separately
 authorized key/ciphertext installation remain distinct gates. Public standard
 runner minutes are free under current GitHub documentation; artifact/storage
