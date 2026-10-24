@@ -1,0 +1,19 @@
+# Public repo: never commit plaintext subjects or review evidence
+*.zip
+*.tar
+*.tar.gz
+*.json
+*.log
+*.pem
+*.key
+*SECRET*
+*BUNDLE_KEY*
+OWNER_ONLY_*
+evidence/
+receipts/
+private/
+scratch/
+__pycache__/
+*.pyc
+.venv/
+.ollama/
