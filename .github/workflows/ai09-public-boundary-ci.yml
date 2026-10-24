@@ -5,6 +5,8 @@ on:
       - public_runner.py
       - tests/test_public_runner.py
       - .github/workflows/ai09-public-boundary-ci.yml
+      - .github/workflows/ai09-public-safe-pilot.yml
+      - tests/test_public_workflow.py
   workflow_dispatch:
 permissions:
   contents: read
