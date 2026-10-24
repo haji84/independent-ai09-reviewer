@@ -20,7 +20,6 @@ jobs:
     permissions:
       contents: read
     env:
-      AI09_BUNDLE_KEY_B64: ${{ secrets.AI09_BUNDLE_KEY_B64 }}
       OLLAMA_HOST: 127.0.0.1:11434
       OLLAMA_NUM_PARALLEL: '1'
       OLLAMA_MAX_LOADED_MODELS: '1'
@@ -44,6 +43,8 @@ jobs:
 
       - name: Verify authenticated ciphertext and unseal in temporary runner storage
         shell: bash
+        env:
+          AI09_BUNDLE_KEY_B64: ${{ secrets.AI09_BUNDLE_KEY_B64 }}
         run: |
           set -euo pipefail
           umask 077
@@ -53,9 +54,13 @@ jobs:
             --destination "$RUNNER_TEMP/ai09-private"
           cd "$RUNNER_TEMP/ai09-private"
           echo '9cf979733d8d4753023b1dd239ba4a5f3be2e0a6a3216c9dda206c089a2b6aa5  universal-ai-development-v0.5-review-candidate.zip' | sha256sum -c -
-          python -m unittest discover -s tests -q
-          python reviewer.py plan universal-ai-development-v0.5-review-candidate.zip \
-            --out "$RUNNER_TEMP/recomputed-plan.json"
+          if ! python -m unittest discover -s tests -q > "$RUNNER_TEMP/ai09-private-tests.log" 2>&1; then
+            echo 'PRIVATE_TESTS_FAILED; contents withheld from public logs'; exit 1
+          fi
+          if ! python reviewer.py plan universal-ai-development-v0.5-review-candidate.zip \
+            --out "$RUNNER_TEMP/recomputed-plan.json" > "$RUNNER_TEMP/ai09-private-plan.log" 2>&1; then
+            echo 'PRIVATE_REVIEW_PLAN_FAILED; contents withheld from public logs'; exit 1
+          fi
           cmp "$RUNNER_TEMP/recomputed-plan.json" evidence/frozen-review-plan.json
 
       - name: Install SHA256-verified isolated Ollama binary
@@ -83,11 +88,13 @@ jobs:
           timeout 600s ollama pull "$REVIEW_MODEL"
           mkdir -p "$RUNNER_TEMP/private-evidence"
           cd "$RUNNER_TEMP/ai09-private"
-          python local_inference_gate.py \
+          if ! python local_inference_gate.py \
             --archive universal-ai-development-v0.5-review-candidate.zip \
             --plan evidence/frozen-review-plan.json \
             --model "$REVIEW_MODEL" \
-            --out "$RUNNER_TEMP/private-evidence/model-inventory.json"
+            --out "$RUNNER_TEMP/private-evidence/model-inventory.json" > "$RUNNER_TEMP/private-inventory.log" 2>&1; then
+            echo "PRIVATE_MODEL_INVENTORY_FAILED"; exit 1
+          fi
 
       - name: Run first eight actual model inferences (never self-approve)
         shell: bash
@@ -95,13 +102,15 @@ jobs:
           set -euo pipefail
           umask 077
           cd "$RUNNER_TEMP/ai09-private"
-          python checkpoint_runner.py \
+          if ! python checkpoint_runner.py \
             --archive universal-ai-development-v0.5-review-candidate.zip \
             --plan evidence/frozen-review-plan.json \
             --model "$REVIEW_MODEL" --start 0 --end 8 \
             --receipts-dir "$RUNNER_TEMP/private-evidence" \
-            --run-id "github-actions-${GITHUB_RUN_ID}-isolated-pilot"
-          python - <<'PY'
+            --run-id "github-actions-${GITHUB_RUN_ID}-isolated-pilot" > "$RUNNER_TEMP/private-inference.log" 2>&1; then
+            echo "PRIVATE_AI09_INFERENCE_FAILED; encrypted partial receipts may be retained"; exit 1
+          fi
+          if ! python - > "$RUNNER_TEMP/private-verify.log" 2>&1 <<'PY'
           import os
           from pathlib import Path
           from reviewer import strict_json,verify_receipts
@@ -114,10 +123,16 @@ jobs:
           assert check['received_chunks']==8 and check['expected_chunks']==104
           print('PILOT_EIGHT_REAL_RECEIPTS_VERIFIED; FULL_REVIEW_NOT_APPROVED')
           PY
+          then
+            echo 'PRIVATE_RECEIPT_VERIFICATION_FAILED'; exit 1
+          fi
+          echo 'PILOT_RECEIPTS=8; FULL_REVIEW_NOT_APPROVED'
 
       - name: Encrypt any real evidence before artifact boundary
         if: always()
         shell: bash
+        env:
+          AI09_BUNDLE_KEY_B64: ${{ secrets.AI09_BUNDLE_KEY_B64 }}
         run: |
           set -euo pipefail
           umask 077
