@@ -1,11 +1,13 @@
 name: Independent AI09 Candidate Proof
+# Model execution is forbidden on unreviewed push. Dispatch requires
+# separate reviewed installation on default branch and explicit owner gate.
 on:
-  push:
-    branches:
-      - audit/remote-lite-1832
-    paths:
-      - src/ai09-independent.mjs
-      - .github/workflows/independent-ai09.yml
+  workflow_dispatch:
+    inputs:
+      approved_head:
+        description: 'Immutable approved candidate SHA'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -16,7 +18,7 @@ concurrency:
 
 jobs:
   reviewer-candidate:
-    if: github.repository == 'haji84/independent-ai09-reviewer'
+    if: github.repository == 'haji84/independent-ai09-reviewer' && github.event.inputs.approved_head == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:

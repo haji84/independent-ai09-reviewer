@@ -6,6 +6,7 @@ import {mkdtempSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {TextDecoder} from 'node:util';
+import {parseSafePublicReview} from './review-schema.mjs';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 const fail=code=>{throw Error(code);};
 const base=process.env.AI09_BASE_SHA??'',head=process.env.AI09_HEAD_SHA??'';
@@ -150,16 +151,9 @@ async function run(){
       responseSha256:typeof raw==='string'?hash(Buffer.from(raw)):null,
       started,modelDigest:review.digest,verdict:'BLOCKED',findings:[]};
     review.records.push(entry);
-    if(typeof raw!=='string'||Buffer.byteLength(raw)>16000)fail('AI09_RESPONSE_INVALID');
-    let obj;try{obj=JSON.parse(raw);}catch{fail('AI09_RESPONSE_NON_JSON')}
-    if(!['NO_FINDINGS','INCONCLUSIVE','CHANGES_REQUESTED'].includes(obj?.verdict)||
-      !Array.isArray(obj.findings)||obj.findings.length>12||
-      obj.findings.some(f=>!f||!['low','medium','high','critical'].includes(f.severity)||
-        typeof f.summary!=='string'||f.summary.length>300))
-      fail('AI09_RESPONSE_SCHEMA_INVALID');
-    entry.verdict=obj.verdict;
-    entry.findings=obj.findings.map(f=>({severity:f.severity,
-      summary:/gh[pousr]_|PRIVATE KEY|password\s*[:=]/iu.test(f.summary)?'REDACTED':f.summary}));
+    const parsed=parseSafePublicReview(packet,model);
+    entry.verdict=parsed.verdict;
+    entry.findings=parsed.findings;
     entry.finished=new Date().toISOString();
     review.reviewedSlices++;
     review.reviewedBytes+=s.end-s.start;
@@ -178,7 +172,7 @@ async function run(){
     'PARTIAL_MODEL_REVIEW_PENDING';
 }
 try{await run();}
-catch(e){review.reason=/^AI09_[A-Z0-9_]+$/u.test(e?.message??'')?e.message:'AI09_UNHANDLED_ERROR';}
+catch(e){review.reason=e?.name==='TimeoutError'?'AI09_MODEL_INFERENCE_TIMEOUT':/^AI09_[A-Z0-9_]+$/u.test(e?.message??'')?e.message:'AI09_UNHANDLED_ERROR';}
 finally{
   rmSync(root,{recursive:true,force:true});
   review.evidenceSha256=hash(JSON.stringify({...review,evidenceSha256:null}));
