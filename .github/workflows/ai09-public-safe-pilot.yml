@@ -1,0 +1,140 @@
+name: Independent AI09 public-safe 8-chunk pilot (manual only)
+
+# Public repository safety: no source, plans, prompts, raw AI findings, or
+# plain-text receipts may be checked in or uploaded as an Actions artifact.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai09-public-safe-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  isolated-pilot:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    env:
+      AI09_BUNDLE_KEY_B64: ${{ secrets.AI09_BUNDLE_KEY_B64 }}
+      OLLAMA_HOST: 127.0.0.1:11434
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+      REVIEW_MODEL: qwen3:1.7b
+    steps:
+      - name: Checkout public bootstrap without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up isolated Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install encryption-only runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --quiet cryptography==46.0.4
+
+      - name: Verify authenticated ciphertext and unseal in temporary runner storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          test -s sealed/ai09-private-bundle.aesgcm
+          python public_runner.py open-bundle \
+            --ciphertext sealed/ai09-private-bundle.aesgcm \
+            --destination "$RUNNER_TEMP/ai09-private"
+          cd "$RUNNER_TEMP/ai09-private"
+          echo '9cf979733d8d4753023b1dd239ba4a5f3be2e0a6a3216c9dda206c089a2b6aa5  universal-ai-development-v0.5-review-candidate.zip' | sha256sum -c -
+          python -m unittest discover -s tests -q
+          python reviewer.py plan universal-ai-development-v0.5-review-candidate.zip \
+            --out "$RUNNER_TEMP/recomputed-plan.json"
+          cmp "$RUNNER_TEMP/recomputed-plan.json" evidence/frozen-review-plan.json
+
+      - name: Install SHA256-verified isolated Ollama binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 2 --max-time 300 \
+            https://github.com/ollama/ollama/releases/download/v0.34.0/ollama-linux-amd64.tar.zst \
+            -o "$RUNNER_TEMP/ollama.tar.zst"
+          echo 'cf95886728959aa09910bb34de5cca1cc5a8f68003b5597197d3f2c2d57c0804  '"$RUNNER_TEMP/ollama.tar.zst" | sha256sum -c -
+          sudo tar --zstd -xf "$RUNNER_TEMP/ollama.tar.zst" -C /usr
+
+      - name: Launch distinct local model (no paid external API)
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          ollama serve > "$RUNNER_TEMP/ollama-private.log" 2>&1 &
+          ready=0
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:11434/api/tags > /dev/null 2>&1; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1
+          timeout 600s ollama pull "$REVIEW_MODEL"
+          mkdir -p "$RUNNER_TEMP/private-evidence"
+          cd "$RUNNER_TEMP/ai09-private"
+          python local_inference_gate.py \
+            --archive universal-ai-development-v0.5-review-candidate.zip \
+            --plan evidence/frozen-review-plan.json \
+            --model "$REVIEW_MODEL" \
+            --out "$RUNNER_TEMP/private-evidence/model-inventory.json"
+
+      - name: Run first eight actual model inferences (never self-approve)
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          cd "$RUNNER_TEMP/ai09-private"
+          python checkpoint_runner.py \
+            --archive universal-ai-development-v0.5-review-candidate.zip \
+            --plan evidence/frozen-review-plan.json \
+            --model "$REVIEW_MODEL" --start 0 --end 8 \
+            --receipts-dir "$RUNNER_TEMP/private-evidence" \
+            --run-id "github-actions-${GITHUB_RUN_ID}-isolated-pilot"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from reviewer import strict_json,verify_receipts
+          root=Path(os.environ['RUNNER_TEMP'])
+          files=sorted((root/'private-evidence').glob('chunk-*.json'))
+          assert [p.name for p in files]==[f'chunk-{i:03d}.json' for i in range(8)]
+          plan=strict_json(Path('evidence/frozen-review-plan.json').read_bytes())
+          receipts=[strict_json(p.read_bytes()) for p in files]
+          check=verify_receipts(plan,'universal-ai-development-v0.5-review-candidate.zip',receipts)
+          assert check['received_chunks']==8 and check['expected_chunks']==104
+          print('PILOT_EIGHT_REAL_RECEIPTS_VERIFIED; FULL_REVIEW_NOT_APPROVED')
+          PY
+
+      - name: Encrypt any real evidence before artifact boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          if [ -d "$RUNNER_TEMP/private-evidence" ] && find "$RUNNER_TEMP/private-evidence" -maxdepth 1 -type f -name 'chunk-*.json' | grep -q .; then
+            mkdir -p "$RUNNER_TEMP/ai09-public-artifacts"
+            python public_runner.py seal-evidence \
+              --source "$RUNNER_TEMP/private-evidence" \
+              --output "$RUNNER_TEMP/ai09-public-artifacts/sealed-evidence.aesgcm"
+          else
+            echo 'NO_REAL_MODEL_RECEIPTS; NOTHING_TO_UPLOAD'
+          fi
+
+      - name: Upload encrypted evidence ONLY
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai09-pilot-encrypted-only
+          path: ${{ runner.temp }}/ai09-public-artifacts/*.aesgcm
+          if-no-files-found: ignore
+          retention-days: 7
