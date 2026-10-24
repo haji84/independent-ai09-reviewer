@@ -6,6 +6,16 @@ IMAGE='python@sha256:4cea12ab7d78a3312c85f8cab19b6971d4fe9704da25443986c0bc20a66
 TMPFS='rw,noexec,nosuid,nodev,size=16777216,mode=1777'
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 GUEST=ROOT/'tests'/'fixtures'/'sandbox_guest.py'
+SAFE_ERRORS={'LINUX_DOCKER_REQUIRED','UNEXPECTED_IDENTITY','UNSAFE_HOST_ACCESS',
+             'FORBIDDEN_ENVIRONMENT','UNEXPECTED_MOUNT','UNEXPECTED_DOCKER_OUTPUT_SIZE',
+             'DOCKER_OPERATION_FAILED','INVALID_READINESS','SYNTHETIC_GUEST_NOT_READY',
+             'GUEST_CHECK_FAILED','TIMEOUT_FIXTURE_DID_NOT_RUN','DESCENDANTS_NOT_STOPPED',
+             'UNEXPECTED_CONTAINER_LOG_EXPORT','HOST_CANARY_CHANGED'}
+EFFECTIVE_FIELDS=('ReadonlyRootfs','NetworkMode','CapDrop','PidsLimit','Memory',
+                  'MemorySwap','NanoCpus','Privileged')
+SAFE_ERRORS.update('UNSAFE_EFFECTIVE_'+key.upper() for key in EFFECTIVE_FIELDS)
+
+def phase(value):print('SYNTHETIC_PROBE_PHASE='+value,flush=True)
 
 def wait_for_ready(read_ready,timeout_seconds=15):
     deadline=time.monotonic()+timeout_seconds
@@ -29,7 +39,7 @@ def validate_inspection(info,image_id,mounts):
     if info['Image']!=image_id or config['User']!='65534:65534':
         raise ValueError('UNEXPECTED_IDENTITY')
     for key,value in expected.items():
-        if host.get(key)!=value:raise ValueError('UNSAFE_EFFECTIVE_CONFIG')
+        if host.get(key)!=value:raise ValueError('UNSAFE_EFFECTIVE_'+key.upper())
     if (host.get('CapAdd') or host.get('GroupAdd') or host.get('Devices') or
         host.get('DeviceRequests') or host.get('PortBindings') or
         host.get('PidMode') not in ('',None) or
@@ -67,7 +77,9 @@ def experiment():
             raise RuntimeError('UNEXPECTED_DOCKER_OUTPUT_SIZE')
         if check and result.returncode:raise RuntimeError('DOCKER_OPERATION_FAILED')
         return result
+    phase('DOCKER_PREFLIGHT')
     docker('version','--format','{{.Server.Version}}')
+    phase('IMAGE_PULL')
     docker('pull',IMAGE,timeout=180)
     image_id=json.loads(docker('image','inspect',IMAGE).stdout)[0]['Id']
     with tempfile.TemporaryDirectory(prefix='ai09-public-synthetic-') as directory:
@@ -81,6 +93,7 @@ def experiment():
             name='ai09-synthetic-'+uuid.uuid4().hex
             created=False
             try:
+                phase('CREATE_'+mode.upper())
                 args=['create','--name',name,'--pull=never','--log-driver=none',
                       '--network=none','--user=65534:65534','--read-only',
                       '--cap-drop=ALL','--security-opt=no-new-privileges',
@@ -92,8 +105,10 @@ def experiment():
                 args += [IMAGE,'python','-I','-B','/probe.py',mode,str(hidden)]
                 docker(*args)
                 created=True
+                phase('INSPECT_'+mode.upper())
                 info=json.loads(docker('inspect',name).stdout)[0]
                 validate_inspection(info,image_id,mounts)
+                phase('START_'+mode.upper())
                 docker('start',name)
                 def ready():
                     result=docker('exec',name,'/bin/cat','/scratch/ready',check=False,timeout=5)
@@ -101,21 +116,26 @@ def experiment():
                     if result.stdout!='PUBLIC-SYNTHETIC-READY':
                         raise RuntimeError('INVALID_READINESS')
                     return True
+                phase('READY_'+mode.upper())
                 wait_for_ready(ready)
                 if mode=='normal':
+                    phase('RELEASE_NORMAL')
                     docker('exec',name,'python','-I','-c',
                            "from pathlib import Path; Path('/scratch/release').touch()")
                     if docker('wait',name,timeout=30).stdout.strip()!='0':
                         raise RuntimeError('GUEST_CHECK_FAILED')
                 else:
+                    phase('FORCED_STOP_HANG')
                     try:docker('wait',name,timeout=3)
                     except subprocess.TimeoutExpired:pass
                     else:raise RuntimeError('TIMEOUT_FIXTURE_DID_NOT_RUN')
                     docker('kill',name)
                     docker('wait',name)
+                phase('VERIFY_STOPPED_'+mode.upper())
                 state=json.loads(docker('inspect',name).stdout)[0]['State']
                 if state['Running'] or state['Pid']!=0 or state['Status']!='exited':
                     raise RuntimeError('DESCENDANTS_NOT_STOPPED')
+                phase('VERIFY_LOGS_'+mode.upper())
                 logs=docker('logs',name,check=False)
                 validate_logs(logs)
             finally:
@@ -126,7 +146,9 @@ def experiment():
 
 def main():
     try:experiment()
-    except Exception:
+    except Exception as error:
+        code=str(error) if str(error) in SAFE_ERRORS else 'UNEXPECTED_ERROR'
+        print('SYNTHETIC_PROBE_ERROR='+code)
         print('SYNTHETIC_SANDBOX_PROBE=FAIL; PRIVATE_RUNTIME_APPROVED=false')
         return 2
     print('SYNTHETIC_SANDBOX_PROBE=PASS; PRIVATE_RUNTIME_APPROVED=false; FIXED_SUBJECT_RECEIPTS=0')

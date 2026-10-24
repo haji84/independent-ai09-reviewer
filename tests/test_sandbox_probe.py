@@ -57,7 +57,8 @@ class SandboxProbeTest(unittest.TestCase):
         result=subprocess.run([sys.executable,'-I',str(PROBE)],env=env,
                               capture_output=True,text=True,timeout=10)
         self.assertNotEqual(result.returncode,0)
-        self.assertEqual(result.stdout.strip(),'SYNTHETIC_SANDBOX_PROBE=FAIL; PRIVATE_RUNTIME_APPROVED=false')
+        self.assertEqual(result.stdout.splitlines(),['SYNTHETIC_PROBE_ERROR=LINUX_DOCKER_REQUIRED',
+            'SYNTHETIC_SANDBOX_PROBE=FAIL; PRIVATE_RUNTIME_APPROVED=false'])
         self.assertEqual(result.stderr,'')
         self.assertNotIn('SYNTHETIC-MUST-NOT-PRINT',result.stdout)
     def test_missing_guest_readiness_fails_closed(self):
