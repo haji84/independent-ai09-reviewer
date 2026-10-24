@@ -6,6 +6,7 @@ on:
       - public_runner.py
       - data_driver.py
       - source_archive.py
+      - runtime_assets.py
       - confidential_capture.py
       - loopback_client.py
       - requirements-public.txt
@@ -19,6 +20,10 @@ on:
       - tools/data_driver_probe.py
       - tests/test_data_driver.py
       - tests/test_source_archive.py
+      - tests/test_runtime_assets.py
+      - tests/test_public_model_smoke.py
+      - tools/public_model_smoke.py
+      - tests/fixtures/model_guest.py
       - tests/test_data_driver_probe.py
       - tests/test_confidential_capture.py
       - tests/test_loopback_client.py
@@ -43,7 +48,7 @@ jobs:
         run: python -m unittest discover -s tests -v
   synthetic-sandbox:
     runs-on: ubuntu-24.04
-    timeout-minutes: 7
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
@@ -58,3 +63,5 @@ jobs:
         run: python3 -I tools/sandbox_probe.py
       - name: Capture, independently verify and seal PUBLIC fake-model bytes only
         run: python3 -I tools/data_driver_probe.py
+      - name: Observe one real pinned local model call on PUBLIC toy input only
+        run: python3 -I tools/public_model_smoke.py

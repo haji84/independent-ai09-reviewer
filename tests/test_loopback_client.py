@@ -5,10 +5,15 @@ import time
 import unittest
 
 from data_driver import GateError
-from loopback_client import post_json
+from loopback_client import get_json, post_json
 
 
 class LoopbackClientTest(unittest.TestCase):
+    def test_inventory_get_is_allowlisted(self):
+        def reply(conn):
+            conn.sendall(b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}')
+        self.assertEqual(get_json('/api/version',port=self.serve(reply),deadline=time.monotonic()+1),b'{}')
+        with self.assertRaises(GateError):get_json('/api/pull',port=1,deadline=time.monotonic()+1)
     def serve(self, reply):
         server = socket.socket()
         server.bind(('127.0.0.1', 0)); server.listen(1)

@@ -77,6 +77,15 @@ def post_json(body, *, deadline, port=11434):
     The caller passes the same absolute deadline for every item in a batch.
     Alternate ports exist only for public synthetic tests.
     """
+    return _request(body,'POST','/api/generate',deadline,port)
+
+
+def get_json(path, *, deadline, port=11434):
+    require(path in ('/api/version','/api/tags'),'MODEL_TRANSPORT_FAILED')
+    return _request(b'','GET',path,deadline,port)
+
+
+def _request(body, method, path, deadline, port):
     require(type(body) is bytes and len(body) <= MAX_JSON, 'MODEL_TRANSPORT_FAILED')
     require(type(port) is int and 1 <= port <= 65535, 'MODEL_TRANSPORT_FAILED')
     try:
@@ -86,7 +95,8 @@ def post_json(body, *, deadline, port=11434):
             connection.settimeout(remaining)
             connection.connect(('127.0.0.1', port))
             connection.settimeout(max(0.001, deadline-time.monotonic()))
-            connection.sendall(b'POST /api/generate HTTP/1.1\r\nHost: 127.0.0.1\r\n'
+            connection.sendall(method.encode('ascii')+b' '+path.encode('ascii')+
+                               b' HTTP/1.1\r\nHost: 127.0.0.1\r\n'
                                b'Content-Type: application/json\r\nConnection: close\r\n'
                                b'Content-Length: '+str(len(body)).encode('ascii')+b'\r\n\r\n'+body)
             response_socket = _ResponseSocket(connection, deadline)

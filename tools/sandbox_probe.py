@@ -4,6 +4,7 @@ import hashlib,json,os,pathlib,shutil,subprocess,sys,tempfile,time,uuid
 
 IMAGE='python@sha256:4cea12ab7d78a3312c85f8cab19b6971d4fe9704da25443986c0bc20a6678850'
 TMPFS='rw,noexec,nosuid,nodev,size=16777216,mode=1777'
+MODEL_TMPFS='rw,noexec,nosuid,nodev,size=67108864,mode=1777'
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 GUEST=ROOT/'tests'/'fixtures'/'sandbox_guest.py'
 SAFE_ERRORS={'LINUX_DOCKER_REQUIRED','UNEXPECTED_IDENTITY','UNSAFE_HOST_ACCESS',
@@ -30,12 +31,18 @@ def validate_logs(result):
     if result.returncode!=0 and not result.stdout and result.stderr.strip()==expected:return
     raise ValueError('UNEXPECTED_CONTAINER_LOG_EXPORT')
 
-def validate_inspection(info,image_id,mounts):
+def validate_inspection(info,image_id,mounts,*,profile='synthetic'):
     """Reject an effective container config that weakens this experiment."""
     host=info['HostConfig'];config=info['Config']
     expected={'ReadonlyRootfs':True,'NetworkMode':'none','CapDrop':['ALL'],
               'PidsLimit':32,'Memory':134217728,'MemorySwap':134217728,
               'NanoCpus':1000000000,'Privileged':False}
+    tmpfs=TMPFS
+    if profile=='public-model':
+        expected.update(PidsLimit=128,Memory=4294967296,MemorySwap=4294967296,
+                        NanoCpus=2000000000)
+        tmpfs=MODEL_TMPFS
+    elif profile!='synthetic':raise ValueError('UNEXPECTED_IDENTITY')
     if info['Image']!=image_id or config['User']!='65534:65534':
         raise ValueError('UNEXPECTED_IDENTITY')
     for key,value in expected.items():
@@ -47,7 +54,7 @@ def validate_inspection(info,image_id,mounts):
         host.get('SecurityOpt')!=['no-new-privileges'] or
         host.get('LogConfig',{}).get('Type')!='none' or
         host.get('LogConfig',{}).get('Config') not in (None,{}) or
-        host.get('Tmpfs')!={'/scratch':TMPFS}):
+        host.get('Tmpfs')!={'/scratch':tmpfs}):
         raise ValueError('UNSAFE_HOST_ACCESS')
     for item in config.get('Env',[]):
         key=item.partition('=')[0]

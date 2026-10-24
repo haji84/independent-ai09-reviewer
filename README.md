@@ -68,4 +68,13 @@ fixed ZIP has not been opened or modified; original compatibility and the
 104-chunk mapping remain unverified. Opaque plan-byte preservation does not
 parse, authenticate or regenerate a plan.
 
+The public CI also attempts one real Ollama/qwen3 call on a fixed public toy
+chunk via `tools/public_model_smoke.py`. It verifies release/model bytes before
+offline container launch and checks version, model digest, exact request and
+response contract after confirmed teardown. It has independent disk/time/CPU/
+memory bounds and no GPU, provider, permission or resource-limit fallback.
+The latest observed outcome is recorded in Issue #3. A successful toy call
+contributes **zero** frozen-subject receipts. Raw toy receipts are discarded;
+only host-derived metadata/hashes are logged, with no artifact/cache upload.
+
 The runner uses local Ollama `qwen3:1.7b` with no paid hosted model APIs. Model answers are unverified until provenance, all chunks, and findings are independently reproduced. No automatic approval or merge.

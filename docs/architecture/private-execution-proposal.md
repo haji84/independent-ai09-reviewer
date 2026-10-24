@@ -159,3 +159,35 @@ structure, stop and review the parser; do not rewrite the original archive.
 Public toy tests cover both streaming data descriptors and seekable ZIPs,
 binary/newline preservation and adversarial structures. Independent advisory
 review found no concrete defect; latest CI evidence belongs in Issue #3.
+
+## Bounded public-model runtime experiment
+
+The next independent stage uses only a fixed PUBLIC toy chunk and actual local
+qwen3:1.7b, never the frozen ZIP/plan or bundle key. Standard public Ubuntu
+runner compute is free under GitHub's current billing documentation; no cache,
+artifact, larger runner, billing setting or private activation is involved.
+Account storage/budget approval for future private evidence remains unresolved.
+
+Implementation plan: `runtime_assets.py` plus tests pins the complete official
+Ollama 0.34.0 tar SHA before parsing; bounds streamed tar metadata/skipped data,
+selects at most256MiB of CPU files, rejects unsupported tar records and resolves
+safe aliases to regular bytes without host symlinks. It verifies the raw pinned
+qwen manifest and every config/layer size+SHA in Ollama's read-only model layout.
+No extracted binary, installer or ldd is run on the host. Unsupported dependencies
+or a limit failure stop; there is no GPU/all-library or resource-relaxation retry.
+
+`tools/public_model_smoke.py` will admit disk/time budgets before downloads, use
+one overall deadline and one attempt, and inspect a distinct bounded model
+profile (4GiB RAM/swap, two CPUs,128 PIDs,64MiB scratch) with the same no-network,
+non-root, read-only, no-capability, no-socket/no-host-write/no-daemon-log controls.
+A public fixture calls the real loopback service once with finite generation/
+context/thread limits and records raw request/response, version/tags and timing.
+The host verifies its own context/digests and confirms container teardown before
+accepting the packet. Only fixed metadata is logged; raw receipts are discarded,
+so later independent raw-receipt replay is unavailable for this experiment.
+SYNTHETIC input classification and fixed-subject counts0/8,0/104 never change.
+This is observed inference under trusted runner/container assumptions, not a
+cryptographic model-execution attestation or formal GitHub approval.
+Regular local filesystem operations are assumed to complete: deadline checks
+surround bounded reads/writes/hashing, but cannot interrupt a blocked kernel
+filesystem call. Network downloads use a separately timed child process.

@@ -26,6 +26,13 @@ class SandboxProbeTest(unittest.TestCase):
         module=self.load_probe()
         module.validate_inspection(self.fixture(),'sha256:synthetic-image',
                                    {'/probe.py':'/public/fixture.py','/input':'/synthetic/input'})
+    def test_model_resource_profile_does_not_relax_small_profile(self):
+        module=self.load_probe();fixture=self.fixture();host=fixture['HostConfig']
+        host.update(PidsLimit=128,Memory=4294967296,MemorySwap=4294967296,NanoCpus=2000000000,
+                    Tmpfs={'/scratch':module.MODEL_TMPFS})
+        mounts={'/probe.py':'/public/fixture.py','/input':'/synthetic/input'}
+        module.validate_inspection(fixture,'sha256:synthetic-image',mounts,profile='public-model')
+        with self.assertRaises(ValueError):module.validate_inspection(fixture,'sha256:synthetic-image',mounts)
     def test_effective_unsafe_configuration_is_rejected(self):
         module=self.load_probe()
         changes=[('NetworkMode','bridge'),('Privileged',True),('ReadonlyRootfs',False),
