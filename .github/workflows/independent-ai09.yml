@@ -64,7 +64,7 @@ jobs:
             sleep 2
           done
           test "$ready" = 1
-          timeout 480s ollama pull qwen2.5-coder:3b
+          timeout 600s ollama pull qwen2.5-coder:7b
       - name: Source-only independent model canary
         shell: bash
         run: node src/ai09-independent.mjs
