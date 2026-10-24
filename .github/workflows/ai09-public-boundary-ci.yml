@@ -17,6 +17,7 @@ on:
       - tests/fixtures/sandbox_guest.py
       - tools/data_driver_probe.py
       - tests/test_data_driver.py
+      - tests/test_data_driver_probe.py
       - tests/test_confidential_capture.py
       - tests/test_loopback_client.py
       - tests/fixtures/data_guest.py

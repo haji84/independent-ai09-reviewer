@@ -52,6 +52,25 @@ class _ResponseSocket:
         return self.reader
 
 
+def _read_chunks(reader):
+    # HTTPResponse.read() discards chunk separators without checking their
+    # contents and permits EOF in the trailer. Enforce a strict bounded subset:
+    # hexadecimal sizes, CRLF separators, zero chunk and final empty line.
+    # Extensions/trailers are not part of this Ollama JSON transport contract.
+    result = bytearray()
+    while True:
+        line = reader.readline(8193)
+        require(re.fullmatch(b'[0-9a-fA-F]{1,6}\r\n', line), 'MODEL_TRANSPORT_FAILED')
+        count = int(line[:-2], 16)
+        require(len(result)+count <= MAX_RESPONSE, 'MODEL_TRANSPORT_FAILED')
+        if count == 0:
+            require(reader.readline(8193) == b'\r\n', 'MODEL_TRANSPORT_FAILED')
+            return bytes(result)
+        block = reader.read(count)
+        require(len(block) == count and reader.read(2) == b'\r\n', 'MODEL_TRANSPORT_FAILED')
+        result.extend(block)
+
+
 def post_json(body, *, deadline, port=11434):
     """Return the exact /api/generate JSON body, never log it.
 
@@ -89,7 +108,8 @@ def post_json(body, *, deadline, port=11434):
                             'MODEL_TRANSPORT_FAILED')
                 else:
                     require(transfer == 'chunked', 'MODEL_TRANSPORT_FAILED')
-                raw = response.read(MAX_RESPONSE + 1)
+                raw = (_read_chunks(response.fp) if transfer == 'chunked'
+                       else response.read(MAX_RESPONSE + 1))
                 require(len(raw) <= MAX_RESPONSE and
                         (length is None or len(raw) == int(length)), 'MODEL_TRANSPORT_FAILED')
                 require(time.monotonic() <= deadline, 'MODEL_TRANSPORT_FAILED')

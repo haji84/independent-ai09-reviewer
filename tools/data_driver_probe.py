@@ -19,6 +19,23 @@ spec = importlib.util.spec_from_file_location('sandbox_policy', ROOT/'tools'/'sa
 policy = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(policy)
 
+SAFE_ERRORS = {'LINUX_DOCKER_REQUIRED','DOCKER_OPERATION_FAILED',
+               'SYNTHETIC_CAPTURE_FAILED','SYNTHETIC_CAPTURE_DID_NOT_BLOCK',
+               'SYNTHETIC_VERIFIER_FAILED','SYNTHETIC_VERIFIER_DID_NOT_BLOCK',
+               'SYNTHETIC_SEAL_FAILED'} | policy.SAFE_ERRORS
+CAPTURE_ERRORS = {'CAPTURE_LIMIT','CAPTURE_TIMEOUT','CAPTURE_EXIT','CAPTURE_FAILED',
+                  'CAPTURE_CLEANUP_FAILED','CONTAINER_STOP_UNVERIFIED'}
+
+
+def stop_container(docker, name):
+    # kill can race with natural exit or broken attach. Its return code is not
+    # proof of termination; the subsequent wait and exact inspect are required.
+    docker('kill',name,check=False)
+    docker('wait',name)
+    state = json.loads(docker('inspect',name).stdout)[0]['State']
+    return (state['Running'] is False and state['Pid'] == 0 and
+            state['Status'] == 'exited')
+
 
 def experiment():
     if sys.platform != 'linux' or not shutil.which('docker'):
@@ -63,19 +80,15 @@ def experiment():
 
             def stop_and_verify():
                 # Identity is generated/retained by this host, never from a packet.
-                state = json.loads(docker('inspect',name).stdout)[0]['State']
-                if state['Running']:
-                    docker('kill',name)
-                docker('wait',name)
-                state = json.loads(docker('inspect',name).stdout)[0]['State']
-                return (state['Running'] is False and state['Pid'] == 0 and
-                        state['Status'] == 'exited')
+                return stop_container(docker,name)
 
             try:
                 raw = capture(['docker','start','--attach',name],safe_env,stop_and_verify,
                               timeout=3 if mode == 'escaped' else 30,
                               max_bytes=driver.MAX_PACKET)
             except CaptureError as error:
+                code = str(error) if str(error) in CAPTURE_ERRORS else 'UNKNOWN_CAPTURE_ERROR'
+                print('SYNTHETIC_CAPTURE_RESULT='+code, flush=True)
                 expected_error = {'oversize':'CAPTURE_LIMIT','escaped':'CAPTURE_TIMEOUT'}.get(mode)
                 if str(error) != expected_error:
                     raise RuntimeError('SYNTHETIC_CAPTURE_FAILED') from None
@@ -105,8 +118,10 @@ def experiment():
 def main():
     try:
         experiment()
-    except BaseException:
+    except BaseException as error:
         # Never print captured data, stderr, argv, HTTP bodies or raw exceptions.
+        code = str(error) if str(error) in SAFE_ERRORS else 'UNEXPECTED_ERROR'
+        print('SYNTHETIC_DRIVER_ERROR='+code)
         print('SYNTHETIC_DATA_DRIVER=FAIL; PRIVATE_RUNTIME_APPROVED=false')
         return 2
     print('SYNTHETIC_DATA_DRIVER=PASS; PRIVATE_RUNTIME_APPROVED=false; FIXED_SUBJECT_RECEIPTS=0')

@@ -58,5 +58,12 @@ class LoopbackClientTest(unittest.TestCase):
             with self.assertRaises(GateError):
                 self.call(self.serve(lambda conn: conn.sendall(reply)))
 
+    def test_chunked_separator_and_final_terminator_are_mandatory(self):
+        prefix = b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}'
+        for suffix in (b'XX0\r\n\r\n', b'\r\n0\r\n'):
+            with self.subTest(suffix=suffix):
+                with self.assertRaisesRegex(GateError, '^MODEL_TRANSPORT_FAILED$'):
+                    self.call(self.serve(lambda conn: conn.sendall(prefix+suffix)))
+
 
 if __name__ == '__main__': unittest.main()
