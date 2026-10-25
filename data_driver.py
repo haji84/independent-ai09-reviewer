@@ -175,7 +175,7 @@ def build_request(chunk):
                            'start_line': chunk.start_line, 'end_line': chunk.end_line,
                            'source': chunk.content.decode('utf-8')}).decode('ascii'))
     return encode_json({'model': MODEL, 'prompt': prompt, 'stream': False,
-                        'think': False, 'format': 'json',
+                        'think': False, 'format': 'json','truncate':False,'shift':False,
                         'options': {'temperature': 0, 'seed': 0, 'num_predict': 2048,
                                     'num_ctx':4096,'num_thread':2}})
 

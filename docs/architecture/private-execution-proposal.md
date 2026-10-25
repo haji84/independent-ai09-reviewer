@@ -210,3 +210,78 @@ without exposing response or exception text. Regression tests fail before the
 fix and pass afterward; unknown fields and all resource/security limits remain
 enforced. If the next CI fails, stop automatic retries and record BLOCKED in
 Issue #3. Successful public toy inference would still leave private receipts0/104.
+
+# Public context rejection implementation plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans
+> for this bounded native implementation; independent model design/code reviews
+> remain required by Issue #3. This is public implementation planning, never a
+> replacement or edit of the original frozen-review-plan.json.
+
+**Goal:** Reject oversized model inputs visibly instead of accepting a silently
+truncated review, while preserving the original chunks and all activation gates.
+
+**Architecture:** Bind explicit no-truncate/no-shift flags into the reconstructed
+request. Observe one normal public toy response and one pinned context-limit
+rejection under the existing inspected runtime, then independently verify the
+raw rejection evidence on the host after container teardown.
+
+**Tech Stack:** Existing Python stdlib/unittest, pinned Ollama0.34.0/qwen3:1.7b,
+GitHub's existing public Linux CI; no additional dependency/provider/credential.
+
+**Spec:** Issue #3 and the approved data-only design above. The owner's renewed
+completion instruction authorizes ordinary public implementation and testing;
+it does not authorize private activation, new permissions, billing or approval.
+
+## Global constraints
+
+- Preserve the fixed source SHA and original plan; do not rechunk or normalize.
+- Keep FROZEN_PLAN_SCHEMA_UNVERIFIED and unconditional pilot HOLD unchanged.
+- Keep 4096 context,2048 generation,2 threads and existing Docker/time limits.
+- Public synthetic input only; no raw request/response reaches Actions logs.
+- Evidence remains SYNTHETIC; fixed-subject counts remain0/8 and0/104.
+- The previous CI correction sequence succeeded. This is a new planned missing
+  control, not a retry of that failure; no additional automatic CI correction
+  attempts are budgeted. A failed new CI is recorded BLOCKED without retry.
+
+## Review focus
+
+- A worker changing or omitting either flag must fail host request binding.
+- An unrelated400,500,malformed/oversized/slow response must never count as a
+  context-limit rejection; accept only the pinned error contract.
+- Negative evidence must bind the exact host-known public input/options/context,
+  rather than trust a worker-provided pass boolean or self-chosen input hash.
+- Capture/deadline/log suppression/container teardown and inventory verification
+  must cover both positive and negative requests with no new writable mount.
+- A rejected request is not a completed review; no real/fixed receipt promotion,
+  tokenizer attestation, original-plan compatibility or104 completeness claim.
+
+## Bounded tasks
+
+- [x] Add failing data-driver tests for explicit truncate=false/shift=false,
+  exact reconstruction and rejection of flag tampering. Implement the flags
+  without changing chunk bytes, context size or generation budget.
+- [x] Add failing transport/probe tests for the pinned context-limit error,
+  including unrelated status/body, missing/duplicate fields, bad types, limits
+  and deadlines. Implement the smallest bounded400-only diagnostic path while
+  leaving ordinary inference restricted to200.
+- [x] Extend the existing public model guest/host to record and independently
+  validate one deterministic oversized public input rejection after teardown;
+  normal toy inference must still succeed. Add canary-suppression tests.
+- [ ] Run local tests/compile/diff checks, obtain different-model code review,
+  publish within PR #2, and verify the new HEAD's CI once. Record exact outcome
+  and remaining gates in Issue #3. Never relax a limit to obtain PASS.
+
+The separate gpt-6-astra design review accepted this public-only implementation
+with a strict pinned error contract: HTTP400, outer error string containing
+JSON with an error object, exactly code/type/message/n_prompt_tokens/n_ctx,
+code400, type exceed_context_size_error, context4096, bounded integer prompt
+count at least4096, and the pinned message with matching counters. Generic400,
+unknown nesting, extra OOM text and changed input/flags cannot establish PASS.
+No original-plan/tokenizer/production attestation follows from this probe.
+
+Local RED→GREEN evidence: missing flags were accepted before the fix; absent
+rejection/host validators and a guest that emitted success without negative
+evidence failed their new assertions. After implementation,90 tests ran with
+85 PASS/5 Linux-only SKIP; compile and diff checks pass. Linux rejection behavior
+is still pending the one latest-HEAD CI execution; no result is assumed.

@@ -30,6 +30,28 @@ def packet(expected=None):
 
 
 class DataDriverTest(unittest.TestCase):
+    def test_request_disables_input_truncation_and_context_shift(self):
+        chunk=batch().chunks[0]
+        request=driver.parse_json(driver.build_request(chunk))
+        self.assertIs(request.get('truncate'),False)
+        self.assertIs(request.get('shift'),False)
+        prompt=driver.parse_json(request['prompt'].split('\n',1)[1].encode('ascii'))
+        self.assertEqual(prompt['source'].encode('utf-8'),chunk.content)
+
+    def test_host_rejects_removed_or_retyped_context_flags(self):
+        for name in ('truncate','shift'):
+            for change in ('remove',0,True):
+                with self.subTest(name=name,change=change):
+                    value=json.loads(packet());record=value['records'][0]
+                    request=json.loads(base64.b64decode(record['request_b64']))
+                    if change=='remove':request.pop(name,None)
+                    else:request[name]=change
+                    raw=driver.encode_json(request)
+                    record['request_b64']=base64.b64encode(raw).decode('ascii')
+                    record['request_sha']=driver.digest(raw)
+                    with self.assertRaises(driver.GateError):
+                        driver.verify_synthetic_packet(driver.encode_json(value),batch())
+
     def test_original_plan_adapter_always_blocks_before_io_or_inference(self):
         with self.assertRaisesRegex(driver.GateError, '^FROZEN_PLAN_SCHEMA_UNVERIFIED$'):
             driver.load_frozen_plan(None, None)

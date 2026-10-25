@@ -85,7 +85,16 @@ def get_json(path, *, deadline, port=11434):
     return _request(b'','GET',path,deadline,port)
 
 
-def _request(body, method, path, deadline, port):
+def post_context_rejection(body, *, deadline, port=11434):
+    """PUBLIC negative probe only: require400, return bounded untrusted bytes.
+
+    The caller must validate the pinned context-error schema. An arbitrary400
+    is not evidence; ordinary post_json still accepts200 only.
+    """
+    return _request(body,'POST','/api/generate',deadline,port,expected_status=400)
+
+
+def _request(body, method, path, deadline, port, *, expected_status=200):
     require(type(body) is bytes and len(body) <= MAX_JSON, 'MODEL_TRANSPORT_FAILED')
     require(type(port) is int and 1 <= port <= 65535, 'MODEL_TRANSPORT_FAILED')
     try:
@@ -102,7 +111,7 @@ def _request(body, method, path, deadline, port):
             response_socket = _ResponseSocket(connection, deadline)
             with http.client.HTTPResponse(response_socket) as response:
                 response.begin()
-                require(response.status == 200, 'MODEL_TRANSPORT_FAILED')
+                require(response.status == expected_status, 'MODEL_TRANSPORT_FAILED')
                 headers = {}
                 for key, value in response.getheaders():
                     key = key.lower()

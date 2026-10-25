@@ -5,6 +5,7 @@ on:
       - AGENTS.md
       - public_runner.py
       - data_driver.py
+      - context_probe.py
       - source_archive.py
       - runtime_assets.py
       - confidential_capture.py
@@ -19,6 +20,7 @@ on:
       - tests/fixtures/sandbox_guest.py
       - tools/data_driver_probe.py
       - tests/test_data_driver.py
+      - tests/test_context_probe.py
       - tests/test_source_archive.py
       - tests/test_runtime_assets.py
       - tests/test_public_model_smoke.py

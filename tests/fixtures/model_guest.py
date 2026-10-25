@@ -1,4 +1,4 @@
-"""One PUBLIC toy chunk, real Ollama. Never accepts private source or a plan."""
+"""PUBLIC normal/context-limit cases, real Ollama; no private source or plan."""
 import base64
 import os
 import subprocess
@@ -7,8 +7,9 @@ import time
 
 sys.path.insert(0,'/code')
 import data_driver as driver
-from loopback_client import get_json,post_json
+from loopback_client import get_json,post_json,post_context_rejection
 import runtime_assets as assets
+import context_probe
 
 
 def encode(raw):return base64.b64encode(raw).decode('ascii')
@@ -48,6 +49,13 @@ def experiment():
         finished=time.time_ns()
         error_code='PUBLIC_MODEL_RESPONSE_REJECTED'
         record=driver.record_exchange(chunk,request,response)
+        error_code='PUBLIC_MODEL_CONTEXT_REJECTION_FAILED'
+        rejection_request=context_probe.public_request()
+        rejection_started=time.time_ns()
+        rejection_response=post_context_rejection(rejection_request,deadline=deadline)
+        rejection_finished=time.time_ns()
+        rejection=context_probe.record_rejection(expected,rejection_request,rejection_response,
+                                                  rejection_started,rejection_finished)
         error_code='PUBLIC_MODEL_INVENTORY_MISMATCH'
         version_after=get_json('/api/version',deadline=deadline)
         tags_after=get_json('/api/tags',deadline=deadline)
@@ -55,7 +63,7 @@ def experiment():
         packet={'receipt_b64':encode(driver.make_packet(expected,[record])),
                 'version_before':encode(version_before),'tags_before':encode(tags_before),
                 'version_after':encode(version_after),'tags_after':encode(tags_after),
-                'started_ns':started,'finished_ns':finished}
+                'started_ns':started,'finished_ns':finished,'context_rejection':rejection}
     except BaseException:
         packet={'error':error_code}  # fixed control codes; never exception/model text
     sys.stdout.buffer.write(driver.encode_json(packet))

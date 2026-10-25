@@ -6,9 +6,34 @@ import unittest
 
 from data_driver import GateError
 from loopback_client import get_json, post_json
+import loopback_client as transport
 
 
 class LoopbackClientTest(unittest.TestCase):
+    def rejection(self,port,seconds=1):
+        operation=getattr(transport,'post_context_rejection',None)
+        self.assertTrue(callable(operation),'400-only bounded diagnostic path is missing')
+        return operation(b'{}',port=port,deadline=time.monotonic()+seconds)
+
+    def test_rejection_transport_requires_400_and_keeps_normal_post_200_only(self):
+        for status in (200,400,500,302):
+            reply=f'HTTP/1.1 {status} PUBLIC\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{{}}'.encode()
+            if status==400:
+                self.assertEqual(self.rejection(self.serve(lambda conn:conn.sendall(reply))),b'{}')
+                with self.assertRaises(GateError):self.call(self.serve(lambda conn:conn.sendall(reply)))
+            else:
+                with self.assertRaises(GateError):self.rejection(self.serve(lambda conn:conn.sendall(reply)))
+
+    def test_rejection_transport_keeps_body_limits_and_total_deadline(self):
+        reply=b'HTTP/1.1 400 PUBLIC\r\nContent-Type: application/json\r\nContent-Length: 999999\r\n\r\n'
+        with self.assertRaises(GateError):self.rejection(self.serve(lambda conn:conn.sendall(reply)))
+        def slow(conn):
+            conn.sendall(b'HTTP/1.1 400 PUBLIC\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n')
+            for _ in range(50):conn.sendall(b'x');time.sleep(0.02)
+        started=time.monotonic()
+        with self.assertRaises(GateError):self.rejection(self.serve(slow),seconds=0.15)
+        self.assertLess(time.monotonic()-started,0.8)
+
     def test_inventory_get_is_allowlisted(self):
         def reply(conn):
             conn.sendall(b'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}')
