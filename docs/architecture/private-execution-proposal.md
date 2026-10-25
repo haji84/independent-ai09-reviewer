@@ -268,7 +268,7 @@ it does not authorize private activation, new permissions, billing or approval.
 - [x] Extend the existing public model guest/host to record and independently
   validate one deterministic oversized public input rejection after teardown;
   normal toy inference must still succeed. Add canary-suppression tests.
-- [ ] Run local tests/compile/diff checks, obtain different-model code review,
+- [x] Run local tests/compile/diff checks, obtain different-model code review,
   publish within PR #2, and verify the new HEAD's CI once. Record exact outcome
   and remaining gates in Issue #3. Never relax a limit to obtain PASS.
 
@@ -284,4 +284,71 @@ Local RED→GREEN evidence: missing flags were accepted before the fix; absent
 rejection/host validators and a guest that emitted success without negative
 evidence failed their new assertions. After implementation,90 tests ran with
 85 PASS/5 Linux-only SKIP; compile and diff checks pass. Linux rejection behavior
-is still pending the one latest-HEAD CI execution; no result is assumed.
+was subsequently observed in CI40184971674 atd1c30a3: Linux90/90 PASS,
+normal public toy inference1PASS and strict context rejection1PASS,HTTP400,
+16103 prompt tokens versus4096 context; total42.36s. Artifacts0 and checked
+raw/canary markers absent. No automatic corrective retry was used. This does
+not establish every future input's tokenization or original-plan compatibility.
+
+# Synthetic104 completeness implementation plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans.
+> This consumes host-owned normalized expectations; it never invents, parses,
+> regenerates or replaces the original frozen plan.
+
+**Goal:** Reject missing, duplicated or mismatched receipts across13 batches of8
+using public synthetic data, preserving every exact raw packet for re-verification.
+
+**Architecture:** `receipt_collection.py` verifies13 immutable host Batch values
+and13 byte packets with the existing verifier, then constructs a deterministic
+SYNTHETIC index plus base64 of the unchanged raw packets. A separate reader
+re-verifies packets against externally supplied expectations and rebuilds the
+complete canonical payload. Existing in-memory seal/unseal must preserve it.
+
+**Tech Stack:** Existing Python stdlib/unittest and existing public_runner AES-GCM
+functions. No additional dependency, file output, workflow step or model call.
+
+**Spec:** Issue #3's13x8 completeness requirement and approved data-only design.
+The different-model design review accepts this synthetic-only component.
+
+## Collection constraints and review focus
+
+- Exactly13 Batch objects with8 chunks each; flattened IDs exactly000..103 in
+  order, common commit/source/plan, and host-selected run/attempt per batch.
+- Repeated run/attempt across disjoint batches is valid. This is within-collection
+  completeness, not a persistent cross-run replay/approval ledger.
+- Preserve raw request/response bytes through their original packets. Do not
+  trust metadata/index/counters found only in the candidate payload.
+- Cap final canonical JSON at the existing2MB parser limit. Preflight raw packet
+  types/lengths and base64 expansion plus a bounded index before parsing/encoding.
+  Larger collections remain unsupported; do not raise capture/parser/seal limits.
+- Immutable output classification: SYNTHETIC,synthetic_receipts104,fixed_subject_receipts0.
+  No original47-file coverage, real inference, accuracy or approval claim.
+- No partial success if any batch fails, including the last batch. Authenticated
+  ciphertext with semantically invalid plaintext must still fail verification.
+- Private adapter, fixed ZIP/plan, pilot HOLD, keys/permissions/billing unchanged.
+
+## Bounded collection tasks
+
+- [x] Test complete13x8 construction, raw preservation and immutable classification
+  RED→GREEN; implement `assemble_synthetic_collection(expected_batches, packets)`.
+- [x] Test missing/extra/reordered/duplicate packets, host mismatch and oversize
+  rejection before parsing; verify no partial result. Implement strict preflight.
+- [x] Test canonical payload/index/packet/type/attempt tampering RED→GREEN;
+  implement `verify_synthetic_collection(payload, expected_batches)` using fresh
+  verification and independent index reconstruction.
+- [x] In public tests seal the exact immutable payload, unseal and reverify with
+  external expectations. Reject authenticated but semantically invalid payloads.
+- [ ] Run local checks, independent code review, one latest-HEAD CI in PR #2,
+  and write actual results/gates to Issue #3. No automatic CI correction retry.
+
+Ruling: use a2MB final encoded JSON cap, rather than4MB raw packets or a new
+binary format. Base64 expansion and index must fit existing limits. This is the
+smallest verifiable implementation; actual receipt-size compatibility remains
+unproven until the original plan and approved private pilot become available.
+
+The initial9 collection assertions failed because no verifier existed. The
+implemented collection and reader now pass the full99-test local suite with
+94 PASS/5 Linux-only SKIP. Tests include authenticated but semantically invalid
+plaintext, and aggregate base64 expansion rejected before any packet parsing.
+This introduces no file-based exporter or production runtime wiring.
