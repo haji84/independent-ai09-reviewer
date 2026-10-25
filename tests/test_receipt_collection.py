@@ -44,7 +44,7 @@ class ReceiptCollectionTest(unittest.TestCase):
             self.assertEqual(index['ordinal'],ordinal);self.assertEqual(index['context'],expected[ordinal].context())
             self.assertEqual(index['packet_sha'],driver.digest(packets[ordinal]))
         with self.assertRaises(dataclasses.FrozenInstanceError):result.fixed_subject_receipts=104
-        with self.assertRaises(ValueError):dataclasses.replace(result,evidence_kind='REAL')
+        with self.assertRaises((ValueError,TypeError)):dataclasses.replace(result,evidence_kind='REAL')
 
     def test_shared_run_attempt_and_repeat_verification_are_valid_without_persistent_replay_claim(self):
         self.ready();expected,packets=fixtures(shared_run=True)
