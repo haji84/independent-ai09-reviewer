@@ -19,7 +19,7 @@ MAX_ARCHIVE = 5_000_000
 MAX_EXPANDED = 10_000_000
 MAX_PLAN = 2_000_000
 MAX_ENTRIES = 80
-FILE_COUNT = 47
+FILE_COUNT = 48  # Full archive: 47 selected sources plus the declared manifest.
 BLOCK = 65_536
 
 

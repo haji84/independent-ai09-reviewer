@@ -352,3 +352,35 @@ implemented collection and reader now pass the full99-test local suite with
 94 PASS/5 Linux-only SKIP. Tests include authenticated but semantically invalid
 plaintext, and aggregate base64 expansion rejected before any packet parsing.
 This introduces no file-based exporter or production runtime wiring.
+
+# Recovered frozen-input compatibility (2026-10-27)
+
+Owner-provided staging inputs now identify the fixed original ZIP and original
+plan. Read-only audits by the implementer and gpt-6-astra independently checked
+all104 chunk/source hashes and contiguous coverage of47 selected source files.
+The ZIP has48 regular members: the47 selected sources plus one declared manifest.
+The former47-member admission rule rejected the authentic unchanged archive.
+
+Raw plan SHA256 isad7c9a7b6914670c82b436ede89d543e8e09a3c0902448c9378fb6ab1aaecf44;
+the verified embedded canonical hash is24c5ba68496d129a47b005831e9b523ccb21a5b395f8f1693d7fe78e47a34e94.
+Canonical consistency is distinct from raw-byte identity and signed provenance.
+No original input bytes, paths or private implementation are copied into tests.
+
+The approved additional repair is specified in
+`docs/superpowers/plans/2026-10-27-frozen-input-compatibility.md`.
+The source reader now admits the fixed48-member archive, without hash/count
+overrides. `frozen_plan.verify_plan` independently pins exact raw plan bytes,
+checks the recovered schema/canonical hash and source selection, then verifies
+every original byte offset, source/chunk hash, UTF-8 slice and full coverage.
+
+Original plan end_line is an LF-count boundary, not the final covered line.
+`FrozenSpan` retains that unchanged boundary and byte offsets, alongside
+covered_end_line. Normalized Chunk values contain the exact input bytes and
+actual covered interval. Requests/findings therefore cannot cite an unreceived
+following line. Chunk/span/plan representations hide private content and paths.
+
+This is an offline input adapter only. The production loader and parked pilot's
+unconditional HOLD remain unchanged. There is no private-model invocation,
+encryption-key access, credential/permission/billing change or new artifact.
+Fixed-subject model receipts remain0/8 and0/104; formal GitHub approval is still
+required. Latest-HEAD CI for this additional repair remains pending.

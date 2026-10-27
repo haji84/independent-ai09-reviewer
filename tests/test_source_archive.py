@@ -12,8 +12,8 @@ import source_archive as source
 from data_driver import GateError
 
 
-def toy_archive(changes=None, extras=(), compression=zipfile.ZIP_DEFLATED, comment=b''):
-    files = {f'public/{i:03}.dat': b'PUBLIC\r\n\xff\x00\n' for i in range(47)}
+def toy_archive(changes=None, extras=(), compression=zipfile.ZIP_DEFLATED, comment=b'', count=48):
+    files = {f'public/{i:03}.dat': b'PUBLIC\r\n\xff\x00\n' for i in range(count)}
     if changes:
         files.update(changes)
     stream = io.BytesIO()
@@ -42,7 +42,7 @@ def replace_first_compressed_stream(raw, stream):
     changed=bytearray(raw[:start]+stream+raw[start+old_length:])
     struct.pack_into('<L',changed,18,len(stream))
     position=old_central+delta
-    for index in range(47):
+    for index in range(48):
         if index==0:struct.pack_into('<L',changed,position+20,len(stream))
         else:
             offset=struct.unpack_from('<L',changed,position+42)[0]
@@ -66,7 +66,7 @@ class SourceArchiveTest(unittest.TestCase):
         result = read_toy(raw)
         self.assertEqual(result.archive_sha,hashlib.sha256(raw).hexdigest())
         self.assertEqual(result.directories,('public/',))
-        self.assertEqual(len(result.files),47)
+        self.assertEqual(len(result.files),48)
         self.assertEqual(result.files['public/000.dat'].content,b'PUBLIC\r\n\xff\x00\n')
         self.assertEqual(result.files['public/000.dat'].sha,hashlib.sha256(b'PUBLIC\r\n\xff\x00\n').hexdigest())
         self.assertNotIn('public/',repr(result))
@@ -107,10 +107,16 @@ class SourceArchiveTest(unittest.TestCase):
                     toy_archive(extras=[(f'dir{i}/',b'') for i in range(34)])]:
             with self.assertRaises(GateError): read_toy(raw)
 
+    def test_archive_has_48_members_independently_of_47_selected_sources(self):
+        self.assertEqual(len(read_toy(toy_archive()).files),48)
+        for count in (47,49):
+            with self.assertRaisesRegex(GateError,'^SOURCE_FILE_COUNT_MISMATCH$'):
+                read_toy(toy_archive(count=count))
+
     def test_eocd_inside_comment_and_ambiguous_trailing_structures_fail_closed(self):
         # A normal comment is supported; an embedded EOCD signature is rejected
         # as an explicit unsupported/ambiguous ZIP subset rather than guessed.
-        self.assertEqual(len(read_toy(toy_archive(comment=b'PUBLIC comment')).files),47)
+        self.assertEqual(len(read_toy(toy_archive(comment=b'PUBLIC comment')).files),48)
         for raw in [toy_archive(comment=b'PUBLIC PK\x05\x06 ambiguity'),
                     toy_archive()+b'trailing', toy_archive()[:-10]]:
             with self.assertRaises(GateError): read_toy(raw)
@@ -171,7 +177,7 @@ class SourceArchiveTest(unittest.TestCase):
             def seek(self,*args):raise OSError('not seekable')
         stream=Streaming()
         with zipfile.ZipFile(stream,'w',compression=zipfile.ZIP_DEFLATED) as archive:
-            for index in range(47):archive.writestr(f'public/{index:03}.dat',b'PUBLIC\n')
+            for index in range(48):archive.writestr(f'public/{index:03}.dat',b'PUBLIC\n')
         result=read_toy(stream.getvalue())
         self.assertEqual(result.files['public/046.dat'].content,b'PUBLIC\n')
 

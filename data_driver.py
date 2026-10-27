@@ -107,13 +107,16 @@ def positive_int(value):
     return type(value) is int and 0 < value < 2**63
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True, repr=False)
 class Chunk:
     """Internal normalized view, NOT a replacement frozen-plan schema."""
     chunk_id: str
     path: str
     start_line: int
     content: bytes
+
+    def __repr__(self):
+        return 'Chunk()'
 
     def __post_init__(self):
         require(type(self.chunk_id) is str and
@@ -132,7 +135,7 @@ class Chunk:
 
     @property
     def end_line(self):
-        # Synthetic normalized view only. Original frozen-plan semantics unknown.
+        # Covered last line; the original plan boundary is retained separately.
         return self.start_line + len(self.content.splitlines()) - 1
 
 
@@ -159,6 +162,7 @@ class Batch:
 
 
 def load_frozen_plan(archive, original_plan):
+    # Production admission is separate from frozen_plan's offline input check.
     # No file access, parsing, chunk generation or model call precedes this gate.
     # Never guess ordering, encoding, overlaps or normalization from toy fixtures.
     raise GateError('FROZEN_PLAN_SCHEMA_UNVERIFIED')
