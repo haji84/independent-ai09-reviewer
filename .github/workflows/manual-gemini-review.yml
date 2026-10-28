@@ -1,0 +1,46 @@
+name: Manual Gemini review (trusted default branch only)
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_free_tier:
+        description: 'Type FREE_TIER_CONFIRMED after checking Google AI Studio billing'
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  review:
+    if: github.ref == 'refs/heads/main' && inputs.confirm_free_tier == 'FREE_TIER_CONFIRMED'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: gemini-review
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout trusted reviewer
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          path: reviewer
+      - name: Checkout fixed public subject
+        uses: actions/checkout@v4
+        with:
+          repository: haji84/PERSONAL-AI-HQ
+          ref: 3b1752a3be149c4d6402286b5d8abb807ddb05ca
+          persist-credentials: false
+          path: subject
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run single-file review without publishing response
+        working-directory: reviewer
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
+          REVIEW_ALLOW_PAID: 'false'
+          REVIEW_FREE_TIER_CONFIRMED: 'yes'
+        run: node scripts/run-gemini-one-file.mjs ../subject
+      - name: Discard private evidence
+        if: always()
+        run: rm -rf reviewer/private-review-evidence
