@@ -10,3 +10,10 @@
 6. This one-file probe is **not** full 7-file coverage or an approval. Later expand to complete diff, coverage manifest, independent review and exact current HEAD.
 
 Security: no GitHub write token required. Only loopback Ollama allowed. Do not send private code or secrets. Local evidence is unencrypted until protected by the owner; store it only on a trusted device.
+
+## Provider selection (prototype)
+- Local: REVIEW_PROVIDER=ollama, REVIEW_MODEL=<installed model>; default loopback http://127.0.0.1:11434.
+- Cloud: REVIEW_PROVIDER=openai-compatible, REVIEW_MODEL=<provider model>, REVIEW_API_URL=https://<provider>/v1, REVIEW_API_KEY from private runtime environment. **No endpoint or paid service has been approved or activated.**
+- Run `node --test tests/review-providers.test.mjs` before attempting a model call.
+- Model response does not prove independence by itself; verify implementation model identity and separate runtime.
+- Do not enable automatic cloud calls without explicit spending, privacy and provider terms approval.
