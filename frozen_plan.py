@@ -9,6 +9,7 @@ import dataclasses
 import json
 
 import data_driver as driver
+import pilot_batch
 import source_archive as source
 
 FROZEN_PLAN_SHA = 'ad7c9a7b6914670c82b436ede89d543e8e09a3c0902448c9378fb6ab1aaecf44'
@@ -136,3 +137,19 @@ def verify_plan(archive_raw, plan_raw):
              for path, position in positions.items()), 'FROZEN_PLAN_COVERAGE')
     return VerifiedPlan(archive.archive_sha, driver.digest(plan_raw),
                         plan['plan_sha256'], tuple(spans), tuple(chunks))
+
+
+def prepare_pilot_batch(archive_raw, plan_raw, *, run_id, attempt, commit):
+    """Derive the first eight host expectations from freshly verified raw data.
+
+    Validate all 104 spans before selecting 000..007. The host supplies run
+    identity; source and RAW plan identity come only from the pinned inputs.
+    This offline adapter does not admit private execution, export evidence,
+    classify input as PUBLIC, or grant receipt/approval status. Callers still
+    need the separate production admission and confidential runtime gates.
+    """
+    verified = verify_plan(archive_raw, plan_raw)
+    batch = driver.Batch(run_id, attempt, commit, verified.source_sha,
+                         verified.plan_sha, verified.chunks[:8])
+    pilot_batch.encode_batch(batch)  # Enforce the existing bounded staging contract.
+    return batch

@@ -6,6 +6,42 @@ Authority: Issue #3; implementation approval is not final DESIGN_APPROVAL.
 The production pilot admission failure remains unchanged. Counts remain 0/8 and
 0/104. No new model/provider, credential, billing, permission or merge authority.
 
+## 2026-10-29 offline original-to-pilot input connection
+
+`frozen_plan.prepare_pilot_batch` connects the existing whole-input verifier to
+the host's bounded eight-item staging contract. It freshly verifies the fixed
+archive and RAW plan bytes, including all104 spans and complete47-source
+coverage, before selecting only000..007. Run ID, attempt and commit come from
+the caller's host context; source/raw-plan identity and exact chunk bytes come
+from verification. It accepts no supplied VerifiedPlan, selector or hash override.
+Canonical plan consistency is retained by the verifier but is not substituted
+for the raw plan identity in the host Batch. Covered line boundaries and bytes
+remain unchanged through the existing staging encoder/decoder.
+
+This is an offline, data-only API, not production admission or a confidential
+host controller. It performs no I/O, model call, key access, export or receipt
+promotion. The production loader and parked workflow remain closed. In the
+PUBLIC regression only, test-generated archive/plan pins connect to synthetic
+observations and a PUBLIC-key envelope roundtrip, followed by semantic
+revalidation against the host's original expectations. A PUBLIC_SYNTHETIC
+launch label does not establish input provenance and cannot authorize using
+that demonstration with private data. Actual fixed-subject receipts remain0/8
+and0/104; private container orchestration/export and activation remain unproved.
+
+Before implementation, a separate agent configured by the orchestrator as
+gpt-6.1-terra reviewed this limited design and reported no blocking finding.
+The available record is the model-selection metadata and advisory response,
+not independent provider attestation, model digest, GitHub APPROVED or final
+DESIGN_APPROVAL. Fresh code review and latest-head CI are separate gates.
+
+The current [Issue #3 owner-installation evidence](https://github.com/haji84/independent-ai09-reviewer/issues/3#issuecomment-6431408757)
+records the owner-managed key and main-only `ai09-private-pilot` Environment
+installation as complete. Do not request that same installation or another
+human account again. Confidential ciphertext installation, runtime key-value
+verification, storage conditions and private activation remain separate unmet
+conditions. Older dated statements below are historical; they do not undo the
+owner's later installation or haji84-only human-approval policy.
+
 ## 2026-10-29 observed eight-item connection
 
 The owner approved main's required approval count 1→0 and last-push approval
@@ -144,9 +180,11 @@ References: [network none](https://docs.docker.com/engine/network/drivers/none/)
 
 ## Approval still required for activation
 
-Private activation, legitimate separate GitHub
-approval, successful latest-head CI, account storage/budget checks and separately
-authorized key/ciphertext installation remain distinct gates. Public standard
+Private activation, independent-model review, haji84's owner authorization,
+successful latest-head CI, account storage/budget checks and confidential
+ciphertext installation remain distinct gates. The owner-managed key and
+main-only protected Environment are already installed, as recorded above.
+Public standard
 runner minutes are free under current GitHub documentation; artifact/storage
 usage and account limits still require verification before private evidence runs.
 

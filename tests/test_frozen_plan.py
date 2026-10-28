@@ -1,4 +1,5 @@
 """PUBLIC-only input fixtures. No original bytes or actual-model evidence."""
+import base64
 import copy
 import dataclasses
 import hashlib
@@ -10,8 +11,13 @@ import zipfile
 from unittest.mock import patch
 
 import data_driver as driver
+import context_probe
+import pilot_batch
+import public_runner
 import source_archive as source
 from test_data_driver import response
+from test_context_probe import context_error
+from test_pilot_batch import BASE, SECOND, observation, launch
 
 frozen = (importlib.import_module('frozen_plan')
           if importlib.util.find_spec('frozen_plan') else None)
@@ -207,6 +213,136 @@ class FrozenPlanTest(unittest.TestCase):
         with patch.object(frozen,'verify_plan',side_effect=AssertionError('production must not call')):
             with self.assertRaisesRegex(driver.GateError,'^FROZEN_PLAN_SCHEMA_UNVERIFIED$'):
                 driver.load_frozen_plan(raw,original)
+
+
+class FrozenPilotInputTest(unittest.TestCase):
+    """Bridge PUBLIC archive fixtures only; no private launch or real receipts."""
+
+    def setUp(self):
+        self.prepare = getattr(frozen, 'prepare_pilot_batch', None)
+        self.assertTrue(callable(self.prepare), 'verified original-to-pilot input bridge missing')
+        self.host = {'run_id':'456', 'attempt':2, 'commit':'d'*40}
+
+    def prepare_fixture(self, raw, plan_raw, **host):
+        # Only these test-generated PUBLIC bytes use replacement pins.
+        with patch.object(source, 'FROZEN_SHA', sha(raw)), \
+             patch.object(frozen, 'FROZEN_PLAN_SHA', sha(plan_raw)):
+            return self.prepare(raw, plan_raw, **(host or self.host))
+
+    def public_observation(self, batch):
+        value = observation()
+        value['context'] = batch.context()
+        for record, chunk in zip(value['exchanges'], batch.chunks):
+            reply = base64.b64decode(record['response_b64'], validate=True)
+            record.update(driver.record_exchange(chunk, driver.build_request(chunk), reply))
+        value['context_rejection'] = context_probe.record_rejection(
+            batch, context_probe.public_request(), context_error(),
+            BASE+18*SECOND, BASE+19*SECOND)
+        expected_launch = launch()
+        expected_launch['context'] = batch.context()
+        expected_launch['staged_input_sha'] = sha(pilot_batch.encode_batch(batch))
+        return driver.encode_json(value), expected_launch
+
+    def test_raw_input_identity_first_eight_bytes_and_covered_lines_reach_staging(self):
+        raw, plan, _ = fixture([b'\xe7\x95\x8c\r\n']*3)
+        plan_raw = encode(plan)
+        batch = self.prepare_fixture(raw, plan_raw)
+        self.assertEqual(batch.context(), dict(self.host, source_sha=sha(raw), plan_sha=sha(plan_raw)))
+        self.assertNotEqual(batch.plan_sha, json.loads(plan_raw)['plan_sha256'])
+        self.assertEqual(tuple(chunk.chunk_id for chunk in batch.chunks),
+                         ('000','001','002','003','004','005','006','007'))
+        self.assertEqual(batch.chunks[0].content, b'\xe7\x95\x8c\r\n')
+        self.assertEqual((batch.chunks[0].start_line, batch.chunks[0].end_line), (1,1))
+        self.assertEqual((batch.chunks[2].start_line, batch.chunks[2].end_line), (3,3))
+        self.assertEqual(batch.chunks[-1].content, b'PUBLIC-CANARY-2-1\n')
+        self.assertEqual((batch.chunks[-1].start_line, batch.chunks[-1].end_line), (2,2))
+        staged = pilot_batch.encode_batch(batch)
+        self.assertEqual(pilot_batch.decode_batch(staged), batch)
+        self.assertNotIn('file00', repr(batch))
+        self.assertNotIn('CANARY', repr(batch))
+
+    def test_only_fresh_raw_inputs_are_admitted_without_selectors_or_pin_overrides(self):
+        raw, plan, _ = fixture(); plan_raw = encode(plan)
+        verified = verify_fixture(raw, plan_raw)
+        for value in (verified, bytearray(raw), 'PUBLIC/path.zip'):
+            with self.subTest(value_type=type(value).__name__), self.assertRaises(driver.GateError):
+                self.prepare(value, plan_raw, **self.host)
+        for option in ({'start':8}, {'batch_index':1}, {'expected_sha':sha(raw)},
+                       {'source_sha':sha(raw)}, {'verified':verified}):
+            with self.subTest(option=tuple(option)), self.assertRaises(TypeError):
+                self.prepare(raw, plan_raw, **self.host, **option)
+
+    def test_replacement_inputs_fail_independent_hash_checks_before_parsing(self):
+        raw, plan, _ = fixture(); plan_raw = encode(plan)
+        with patch.object(driver, 'parse_json', side_effect=AssertionError('must not parse')):
+            with self.assertRaisesRegex(driver.GateError, '^FROZEN_SOURCE_HASH_MISMATCH$'):
+                self.prepare(raw, plan_raw, **self.host)
+            with patch.object(source, 'FROZEN_SHA', sha(raw)):
+                with self.assertRaisesRegex(driver.GateError, '^FROZEN_PLAN_HASH_MISMATCH$'):
+                    self.prepare(raw, plan_raw, **self.host)
+
+    def test_host_context_rejects_boolean_attempt_and_invalid_run_or_commit(self):
+        raw, plan, _ = fixture(); plan_raw = encode(plan)
+        for name, value in (('attempt',True), ('attempt',0), ('attempt','2'),
+                            ('run_id','0'), ('run_id',456), ('run_id','456\n'),
+                            ('commit','d'*39), ('commit','D'*40), ('commit',None)):
+            host = dict(self.host); host[name] = value
+            with self.subTest(field=name,value=value), self.assertRaises(driver.GateError):
+                self.prepare_fixture(raw, plan_raw, **host)
+
+    def test_corrupted_last_span_blocks_first_pilot_even_with_recomputed_hashes(self):
+        raw, plan, files = fixture()
+        changed = copy.deepcopy(plan)
+        last = changed['chunks'][103]
+        last['end_byte'] -= 1
+        data = files[last['path']]
+        last['sha256'] = sha(data[last['start_byte']:last['end_byte']])
+        last['end_line'] = data[:last['end_byte']].count(b'\n')+1
+        # Both canonical self-hash and test-only raw hash pin are recomputed.
+        with self.assertRaisesRegex(driver.GateError, '^FROZEN_PLAN_COVERAGE$'):
+            self.prepare_fixture(raw, encode(changed))
+
+    def test_public_origin_to_observation_encryption_revalidates_against_host_input(self):
+        raw, plan, _ = fixture(); plan_raw = encode(plan)
+        batch = self.prepare_fixture(raw, plan_raw)
+        packet, expected_launch = self.public_observation(batch)
+        payload = pilot_batch.evidence_envelope(packet, batch, expected_launch, BASE, BASE+20*SECOND)
+        # PUBLIC test material only. A launch label is not source provenance.
+        key = bytes(range(32)); purpose = b'CONFIDENTIAL-REVIEW-EVIDENCE'
+        encrypted = public_runner.seal(payload, key, purpose)
+        recovered = public_runner.unseal(encrypted, key, purpose)
+        replay = pilot_batch.verify_evidence(recovered, batch, expected_launch, BASE, BASE+20*SECOND)
+        self.assertEqual(replay.payload, packet)
+        self.assertEqual(replay.observed_responses, 8)
+        self.assertEqual(replay.fixed_subject_receipts, 0)
+        wrong_host = dataclasses.replace(batch, plan_sha=json.loads(plan_raw)['plan_sha256'])
+        with self.assertRaises(driver.GateError):
+            pilot_batch.verify_evidence(recovered, wrong_host, expected_launch, BASE, BASE+20*SECOND)
+
+    def test_authenticated_context_substitution_and_seven_responses_are_rejected(self):
+        raw, plan, _ = fixture(); batch = self.prepare_fixture(raw, encode(plan))
+        packet, expected_launch = self.public_observation(batch)
+        payload = pilot_batch.evidence_envelope(packet, batch, expected_launch, BASE, BASE+20*SECOND)
+        envelope = driver.parse_json(payload, driver.MAX_PACKET)
+        candidates = []
+        changed = copy.deepcopy(envelope); changed['context']['attempt'] = 3; candidates.append(changed)
+        changed = copy.deepcopy(envelope); incomplete = driver.parse_json(packet, driver.MAX_PACKET)
+        incomplete['exchanges'].pop()
+        changed['packet_b64'] = base64.b64encode(driver.encode_json(incomplete)).decode('ascii')
+        candidates.append(changed)
+        for candidate in candidates:
+            encrypted = public_runner.seal(driver.encode_json(candidate), bytes(range(32)),
+                                           b'CONFIDENTIAL-REVIEW-EVIDENCE')
+            recovered = public_runner.unseal(encrypted, bytes(range(32)),
+                                             b'CONFIDENTIAL-REVIEW-EVIDENCE')
+            with self.assertRaises(driver.GateError):
+                pilot_batch.verify_evidence(recovered, batch, expected_launch, BASE, BASE+20*SECOND)
+
+    def test_preparing_offline_input_does_not_open_production_entry(self):
+        raw, plan, _ = fixture(); plan_raw = encode(plan)
+        self.prepare_fixture(raw, plan_raw)
+        with self.assertRaisesRegex(driver.GateError, '^FROZEN_PLAN_SCHEMA_UNVERIFIED$'):
+            driver.load_frozen_plan(raw, plan_raw)
 
 
 if __name__=='__main__':unittest.main()
