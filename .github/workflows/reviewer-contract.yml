@@ -17,4 +17,4 @@ jobs:
         with:
           node-version: '22'
       - name: Validate provider configuration
-        run: node --test tests/review-providers.test.mjs tests/gemini-provider.test.mjs
+        run: node --test tests/review-providers.test.mjs tests/gemini-provider.test.mjs tests/evidence-crypto.test.mjs
