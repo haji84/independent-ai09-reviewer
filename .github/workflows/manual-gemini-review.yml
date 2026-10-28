@@ -37,10 +37,14 @@ jobs:
         working-directory: reviewer
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          REVIEW_EVIDENCE_KEY: ${{ secrets.REVIEW_EVIDENCE_KEY }}
           REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
           REVIEW_ALLOW_PAID: 'false'
           REVIEW_FREE_TIER_CONFIRMED: 'yes'
         run: node scripts/run-gemini-one-file.mjs ../subject
+      - name: Validate encrypted evidence exists
+        working-directory: reviewer
+        run: test -s private-review-evidence/gemini-pr9-one-file.enc.json
       - name: Discard private evidence
         if: always()
         run: rm -rf reviewer/private-review-evidence
