@@ -20,7 +20,7 @@ export async function generateReview(prompt,env=process.env) {
  const timer=setTimeout(()=>ctrl.abort(),120000);
  try {
   const isLocal=cfg.provider==='ollama';
-  const endpoint=isLocal?new URL('/api/generate',cfg.url):new URL(cfg.url.href.replace(/\\/$/,'')+'/chat/completions');
+  const endpoint=isLocal?new URL('/api/generate',cfg.url):new URL(cfg.url.href.replace(/\/$/,'')+'/chat/completions');
   const headers={'content-type':'application/json'};
   if(!isLocal) headers.authorization='Bearer '+env.REVIEW_API_KEY;
   const body=isLocal?{model:cfg.model,prompt,stream:false,options:{temperature:0}}:{model:cfg.model,messages:[{role:'user',content:prompt}],temperature:0,stream:false};
