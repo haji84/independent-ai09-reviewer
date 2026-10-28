@@ -9,6 +9,7 @@ on:
       - receipt_collection.py
       - source_archive.py
       - frozen_plan.py
+      - pilot_batch.py
       - runtime_assets.py
       - confidential_capture.py
       - loopback_client.py
@@ -26,6 +27,7 @@ on:
       - tests/test_receipt_collection.py
       - tests/test_source_archive.py
       - tests/test_frozen_plan.py
+      - tests/test_pilot_batch.py
       - tests/test_runtime_assets.py
       - tests/test_public_model_smoke.py
       - tools/public_model_smoke.py
@@ -69,5 +71,5 @@ jobs:
         run: python3 -I tools/sandbox_probe.py
       - name: Capture, independently verify and seal PUBLIC fake-model bytes only
         run: python3 -I tools/data_driver_probe.py
-      - name: Observe one real pinned local model call on PUBLIC toy input only
+      - name: Observe eight pinned model calls and encrypted roundtrip on PUBLIC input only
         run: python3 -I tools/public_model_smoke.py

@@ -6,6 +6,46 @@ Authority: Issue #3; implementation approval is not final DESIGN_APPROVAL.
 The production pilot admission failure remains unchanged. Counts remain 0/8 and
 0/104. No new model/provider, credential, billing, permission or merge authority.
 
+## 2026-10-29 observed eight-item connection
+
+The owner approved main's required approval count 1→0 and last-push approval
+true→false, and continued Issue #3 completion. API reread confirmed exactly
+those two changes; all other protection remained identical. Human approver is
+haji84 only. Genuine different-model technical review and owner authorization
+remain distinct from GitHub APPROVED events; an author cannot create their own
+APPROVED review. Issue #3's dated owner amendment supersedes its older separate
+human requirement. No private activation permission follows from this change.
+
+Different-model design review found the minimum connection consistent with the
+approved data-only architecture. `pilot_batch.py` adds strict eight-item staged
+data and observed-response contracts, not a source execution or REAL promotion
+path. The public worker validates its staged batch before starting Ollama and
+records eight sequential exact requests/responses and individual time windows,
+plus raw inventory before/after and the mandatory context-rejection probe.
+All eight share the existing 450-second guest deadline. Host capture/teardown
+and Docker resource limits are unchanged. Model-response timestamps must fall
+inside their individual request windows.
+
+Public model demonstration data now uses a separate 0700 host temporary parent
+and an exact 0444 read-only data-file mount. The broadly accessible PUBLIC asset
+directory does not contain the staged input. No original ZIP, plan, bundle code
+or encryption key is mounted in this demonstration.
+
+The encrypted evidence envelope preserves the COMPLETE captured packet,
+host-owned context/time window, runtime/model/driver hashes, actual container ID
+and inspected configuration. After sealing with explicitly PUBLIC test key
+material, the host unseals in memory and repeats semantic verification against
+external host expectations. No artifact is exported. Public packets/ciphertext
+are discarded after this check; their printed hashes do not provide later raw
+replay or cryptographic model attestation. Contract validation counts eight
+observations and zero fixed-subject receipts, and cannot grant owner approval.
+
+Local public regression evidence and latest-HEAD Linux execution are tracked in
+Issue #3. Private source/plan loading, confidential input/key installation,
+artifact quota/export and activation remain separate gates. The production
+loader and parked pilot are unchanged and unconditionally closed. A successful
+PUBLIC eight-item experiment is never an original-subject 8/8 or 104/104 review.
+
 ## Approved implementation direction
 
 Replace execution of encrypted Python with a public, reviewed, data-only driver.

@@ -1,4 +1,4 @@
-"""PUBLIC normal/context-limit cases, real Ollama; no private source or plan."""
+"""Staged PUBLIC eight-item/context-limit cases; no private activation."""
 import base64
 import os
 import subprocess
@@ -10,14 +10,25 @@ import data_driver as driver
 from loopback_client import get_json,post_json,post_context_rejection
 import runtime_assets as assets
 import context_probe
+import pilot_batch
 
 
 def encode(raw):return base64.b64encode(raw).decode('ascii')
 
 
+def read_batch():
+    with open('/input/batch.json','rb') as source:
+        raw=source.read(driver.MAX_JSON+1)
+    return pilot_batch.decode_batch(raw)
+
+
 def experiment():
-    error_code='PUBLIC_MODEL_STARTUP_FAILED'
+    error_code='PUBLIC_MODEL_INPUT_REJECTED'
     try:
+        expected=read_batch()
+        driver.require((expected.run_id,expected.attempt,expected.commit)==
+                       (sys.argv[1],int(sys.argv[2]),sys.argv[3]))
+        error_code='PUBLIC_MODEL_STARTUP_FAILED'
         deadline=time.monotonic()+450
         environment={'PATH':'/usr/local/bin:/usr/bin:/bin','HOME':'/scratch','TMPDIR':'/scratch',
                      'LD_LIBRARY_PATH':'/opt/runtime/lib/ollama','OLLAMA_MODELS':'/models',
@@ -39,16 +50,16 @@ def experiment():
         error_code='PUBLIC_MODEL_INVENTORY_MISMATCH'
         tags_before=get_json('/api/tags',deadline=deadline)
         assets.validate_inventory(version_before,tags_before)
-        chunk=driver.Chunk('000','PUBLIC.py',1,b'def add(a, b):\n    return a + b\n')
-        expected=driver.Batch(sys.argv[1],int(sys.argv[2]),sys.argv[3],
-                              driver.digest(b'PUBLIC-TOY-SOURCE'),driver.digest(b'PUBLIC-TOY-NO-PLAN'),(chunk,))
-        request=driver.build_request(chunk)
-        error_code='PUBLIC_MODEL_TRANSPORT_FAILED'
-        started=time.time_ns()
-        response=post_json(request,deadline=deadline)
-        finished=time.time_ns()
-        error_code='PUBLIC_MODEL_RESPONSE_REJECTED'
-        record=driver.record_exchange(chunk,request,response)
+        exchanges=[]
+        for chunk in expected.chunks:
+            request=driver.build_request(chunk)
+            error_code='PUBLIC_MODEL_TRANSPORT_FAILED'
+            started=time.time_ns()
+            response=post_json(request,deadline=deadline)
+            finished=time.time_ns()
+            error_code='PUBLIC_MODEL_RESPONSE_REJECTED'
+            record=driver.record_exchange(chunk,request,response)
+            exchanges.append(dict(record,started_ns=started,finished_ns=finished))
         error_code='PUBLIC_MODEL_CONTEXT_REJECTION_FAILED'
         rejection_request=context_probe.public_request()
         rejection_started=time.time_ns()
@@ -60,10 +71,11 @@ def experiment():
         version_after=get_json('/api/version',deadline=deadline)
         tags_after=get_json('/api/tags',deadline=deadline)
         assets.validate_inventory(version_after,tags_after)
-        packet={'receipt_b64':encode(driver.make_packet(expected,[record])),
+        packet={'schema':pilot_batch.OBSERVATION_SCHEMA,'context':expected.context(),'exchanges':exchanges,
                 'version_before':encode(version_before),'tags_before':encode(tags_before),
                 'version_after':encode(version_after),'tags_after':encode(tags_after),
-                'started_ns':started,'finished_ns':finished,'context_rejection':rejection}
+                'context_rejection':rejection}
+        driver.require(len(driver.encode_json(packet))<=driver.MAX_PACKET)
     except BaseException:
         packet={'error':error_code}  # fixed control codes; never exception/model text
     sys.stdout.buffer.write(driver.encode_json(packet))
