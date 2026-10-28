@@ -1,0 +1,32 @@
+#!/usr/bin/env node
+// Read-only single-file review; requires explicit free-tier confirmation at invocation.
+import {execFileSync} from 'node:child_process';
+import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {resolve,join} from 'node:path';
+import {geminiReview} from './gemini-provider.mjs';
+import {encryptEvidence,decryptEvidence} from './evidence-crypto.mjs';
+const SUBJECT='haji84/PERSONAL-AI-HQ';
+const SHA='3b1752a3be149c4d6402286b5d8abb807ddb05ca';
+const PATH='scripts/secret-guard.mjs';
+if(process.env.REVIEW_FREE_TIER_CONFIRMED!=='yes') throw Error('Free-tier eligibility not confirmed; refuse inference');
+const root=process.argv[2];
+if(!root) throw Error('Missing subject checkout path');
+const dir=resolve(root);
+const actual=execFileSync('git',['-C',dir,'rev-parse','HEAD'],{encoding:'utf8'}).trim();
+if(actual!==SHA) throw Error('Subject SHA mismatch');
+const dirty=execFileSync('git',['-C',dir,'status','--porcelain'],{encoding:'utf8'});
+if(dirty.trim()) throw Error('Dirty subject checkout');
+const source=readFileSync(join(dir,PATH),'utf8');
+const fileHash=createHash('sha256').update(source).digest('hex');
+const prompt='Review the following PUBLIC code for security flaws. Focus on bypass, staged vs worktree, error handling, log leakage. Return file/line evidence and synthetic-only reproduction steps. Do not assert tests were executed.\\n'+PATH+'\\n'+source;
+const result=await geminiReview(prompt);
+const record={schema:'hq-gemini-review-v1',subject:SUBJECT,subjectSha:SHA,path:PATH,fileSha256:fileHash,provider:result.provider,modelRequested:result.requestedModel,modelReturned:result.returnedModel,usage:result.usage,receivedAt:new Date().toISOString(),response:result.output,independentReviewerVerified:false,verdict:'UNVERIFIED_ADVISORY'};
+const evidence=resolve('private-review-evidence');
+mkdirSync(evidence,{recursive:true,mode:0o700});
+const envelope=encryptEvidence(record,process.env.REVIEW_EVIDENCE_KEY);
+const evidenceFile=join(evidence,'gemini-pr9-one-file.enc.json');
+writeFileSync(evidenceFile,JSON.stringify(envelope),{flag:'wx',mode:0o600});
+const restored=decryptEvidence(JSON.parse(readFileSync(evidenceFile,'utf8')),process.env.REVIEW_EVIDENCE_KEY);
+if(restored.subjectSha!==SHA||restored.fileSha256!==fileHash) throw Error('Evidence restore mismatch');
+process.stdout.write('Model response received; subject SHA '+SHA+'; file digest '+fileHash+'; model '+(result.returnedModel||result.requestedModel)+'; evidence stored privately. No approval granted.\\n');
