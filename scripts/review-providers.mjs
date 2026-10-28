@@ -10,6 +10,7 @@ export function validateProviderConfig(env=process.env) {
  const url=new URL(endpoint);
  if(provider==='ollama'&&!['localhost','127.0.0.1','[::1]'].includes(url.hostname)) throw Error('Ollama must be loopback');
  if(provider==='openai-compatible'&&url.protocol!=='https:') throw Error('Cloud endpoint must use HTTPS');
+ if(provider==='openai-compatible'&&(/^(localhost|127\\.|0\\.|10\\.|192\\.168\\.|169\\.254\\.)/i.test(url.hostname)||url.hostname.endsWith('.local'))) throw Error('Private network endpoint forbidden');
  if(url.username||url.password||url.search||url.hash) throw Error('Endpoint must not embed credentials');
  return {provider,model,url};
 }
@@ -19,7 +20,7 @@ export async function generateReview(prompt,env=process.env) {
  const timer=setTimeout(()=>ctrl.abort(),120000);
  try {
   const isLocal=cfg.provider==='ollama';
-  const endpoint=new URL(isLocal?'/api/generate':cfg.url.pathname.replace(/\/$/,'')+'/chat/completions',cfg.url);
+  const endpoint=isLocal?new URL('/api/generate',cfg.url):new URL(cfg.url.href.replace(/\\/$/,'')+'/chat/completions');
   const headers={'content-type':'application/json'};
   if(!isLocal) headers.authorization='Bearer '+env.REVIEW_API_KEY;
   const body=isLocal?{model:cfg.model,prompt,stream:false,options:{temperature:0}}:{model:cfg.model,messages:[{role:'user',content:prompt}],temperature:0,stream:false};
