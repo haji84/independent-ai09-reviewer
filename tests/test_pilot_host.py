@@ -300,6 +300,35 @@ class HostLifecycleTest(unittest.TestCase):
         return host.run_public_pilot(prepared, run_id='123', attempt=1, commit='a'*40,
                                      output_directory=self.output)
 
+    def test_cleanup_metadata_is_live_nonconsuming_and_uses_the_actual_container_name(self):
+        info_function = getattr(host, 'prepared_cleanup_info', None)
+        self.assertTrue(callable(info_function), 'prepared cleanup metadata is missing')
+        fake = FakeRuntime()
+        with fake.install(), host.prepare_runtime() as prepared:
+            info = info_function(prepared)
+            self.assertRegex(info.container_name, r'^ai09-model-[0-9a-f]{32}$')
+            self.assertEqual(info.cleanup_deadline-info.work_deadline, 60)
+            self.assertEqual(repr(info), 'CleanupInfo()')
+            with self.assertRaises(dataclasses.FrozenInstanceError): info.container_name = 'forged'
+            self.assertEqual(info_function(prepared), info)
+            with patch.object(host.time, 'monotonic', return_value=info.work_deadline+1):
+                with self.assertRaises(driver.GateError): info_function(prepared)
+            self.run_public(prepared)
+            created = next(command for command in fake.commands if command[1]=='create')
+            self.assertEqual(created[created.index('--name')+1], info.container_name)
+            self.assertIn(('docker','rm','--force',info.container_name), fake.commands)
+            with self.assertRaises(driver.GateError): info_function(prepared)
+        for token in (prepared, None, object(), host._PreparedRuntime()):
+            with self.assertRaises(driver.GateError): info_function(token)
+
+    def test_result_exposes_actual_host_epoch_observations_without_sensitive_repr(self):
+        fake = FakeRuntime()
+        with fake.install(), host.prepare_runtime() as prepared:
+            result = self.run_public(prepared)
+        self.assertEqual(getattr(result,'host_start_ns',None), BASE)
+        self.assertEqual(getattr(result,'host_end_ns',None), BASE+20*SECOND)
+        self.assertEqual(repr(result), 'PilotResult()')
+
     def test_prepare_then_single_use_execution_exports_only_after_positive_stop(self):
         fake = FakeRuntime()
         with fake.install(), host.prepare_runtime() as prepared:

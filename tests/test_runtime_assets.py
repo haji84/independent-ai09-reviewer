@@ -6,6 +6,7 @@ import json
 import hashlib
 import os
 import subprocess
+import ssl
 import tarfile
 import tempfile
 import time
@@ -33,6 +34,84 @@ def tar_bytes(extras=(),omit=()):
 
 
 class RuntimeAssetsTest(unittest.TestCase):
+    def test_all_proxy_only_has_https_fallback_and_keeps_no_proxy_semantics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for number,name in enumerate(('ALL_PROXY','all_proxy')):
+                seen=[]
+                def opener(*handlers):
+                    seen.extend(handlers)
+                    return type('PublicResponse',(),{'open':lambda self,*a,**kw:io.BytesIO(b'PUBLIC')})()
+                env={name:'http://public-proxy.example:8123','NO_PROXY':'registry.ollama.ai'}
+                with patch.dict(os.environ,env,clear=True),patch.object(assets.urllib.request,'build_opener',opener):
+                    assets._download(assets.MANIFEST_URL,pathlib.Path(directory)/str(number),6,hashlib.sha256(b'PUBLIC').hexdigest())
+                    proxy=next(h for h in seen if isinstance(h,assets.urllib.request.ProxyHandler))
+                    self.assertTrue(callable(getattr(proxy,'https_open',None)),'ALL_PROXY silently bypasses HTTPS')
+                    request=assets.urllib.request.Request(assets.MANIFEST_URL)
+                    proxy.https_open(request)
+                    self.assertEqual(request.host,'registry.ollama.ai')
+                    with patch.dict(os.environ,{'NO_PROXY':''}):
+                        request=assets.urllib.request.Request(assets.MANIFEST_URL)
+                        proxy.https_open(request)
+                        self.assertEqual(request.host,'public-proxy.example:8123')
+                    self.assertEqual(os.environ[name],env[name])
+                    self.assertNotIn('HTTPS_PROXY',os.environ)
+
+    def test_unsupported_all_proxy_cannot_silently_use_direct_https(self):
+        response=type('PublicResponse',(),{'open':lambda self,*a,**kw:io.BytesIO(b'PUBLIC')})()
+        with tempfile.TemporaryDirectory() as directory,patch.dict(os.environ,{'ALL_PROXY':'socks5://public-proxy.example:1080'},clear=True), \
+             patch.object(assets.urllib.request,'build_opener',return_value=response):
+            with self.assertRaisesRegex(GateError,'^PUBLIC_ASSET_PROXY_UNSUPPORTED$'):
+                assets._download(assets.MANIFEST_URL,pathlib.Path(directory)/'unused',6,hashlib.sha256(b'PUBLIC').hexdigest())
+
+    def test_public_download_preserves_only_the_explicit_transport_environment(self):
+        transport = {name:'PUBLIC-TRANSPORT-'+name for name in
+            ('HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY','http_proxy','https_proxy',
+             'all_proxy','no_proxy','SSL_CERT_FILE','SSL_CERT_DIR','REQUESTS_CA_BUNDLE','CURL_CA_BUNDLE')}
+        environment = dict(transport, AI09_BUNDLE_KEY_B64='PUBLIC-KEY-CANARY',
+            GITHUB_TOKEN='PUBLIC-TOKEN-CANARY', GITHUB_OUTPUT='PUBLIC-COMMAND-CANARY',
+            UNRELATED='PUBLIC-UNRELATED-CANARY', SYSTEMROOT='PUBLIC-WINDOWS-RUNTIME')
+        observed = []
+        with tempfile.TemporaryDirectory() as directory:
+            output=pathlib.Path(directory)/'public'
+            def run(argv,**kwargs):
+                observed.append(kwargs['env'])
+                output.write_bytes(b'PUBLIC')
+                return subprocess.CompletedProcess(argv,0)
+            with patch.dict(os.environ,environment,clear=True), patch.object(assets.subprocess,'run',run):
+                assets.download(assets.MANIFEST_URL,output,6,hashlib.sha256(b'PUBLIC').hexdigest(),time.monotonic()+5)
+        self.assertEqual(len(observed),1)
+        for name,value in transport.items(): self.assertEqual(observed[0].get(name),value)
+        for name in ('AI09_BUNDLE_KEY_B64','GITHUB_TOKEN','GITHUB_OUTPUT','UNRELATED'):
+            self.assertNotIn(name,observed[0])
+        self.assertEqual(observed[0]['PATH'],os.defpath)
+
+    def test_download_uses_inherited_proxy_and_verified_configured_ca_precedence(self):
+        # A generated test file containing a public CA certificate, never a key.
+        certificates=ssl.create_default_context().get_ca_certs(binary_form=True)
+        self.assertTrue(certificates)
+        with tempfile.TemporaryDirectory() as directory:
+            base=pathlib.Path(directory); ca=base/'public-ca.pem'
+            ca.write_text(ssl.DER_cert_to_PEM_cert(certificates[0]))
+            variants=({'SSL_CERT_FILE':str(ca),'REQUESTS_CA_BUNDLE':'missing-requests','CURL_CA_BUNDLE':'missing-curl'},
+                      {'SSL_CERT_DIR':str(base),'REQUESTS_CA_BUNDLE':'missing-requests'},
+                      {'REQUESTS_CA_BUNDLE':str(ca),'CURL_CA_BUNDLE':'missing-curl'},
+                      {'CURL_CA_BUNDLE':str(ca)})
+            for number,ca_environment in enumerate(variants):
+                seen=[]
+                def opener(*handlers):
+                    seen.extend(handlers)
+                    return type('PublicResponse',(),{'open':lambda self,*a,**kw:io.BytesIO(b'PUBLIC')})()
+                env=dict(ca_environment,HTTPS_PROXY='http://public-proxy.example:8123',NO_PROXY='localhost')
+                with self.subTest(case=number),patch.dict(os.environ,env,clear=True),\
+                     patch.object(assets.urllib.request,'build_opener',opener):
+                    assets._download(assets.MANIFEST_URL,base/str(number),6,hashlib.sha256(b'PUBLIC').hexdigest())
+                proxies=[h for h in seen if isinstance(h,assets.urllib.request.ProxyHandler)]
+                self.assertEqual(proxies[0].proxies.get('https'),'http://public-proxy.example:8123')
+                tls=[h for h in seen if isinstance(h,assets.urllib.request.HTTPSHandler)]
+                self.assertEqual(len(tls),1,'configured verified TLS handler is missing')
+                self.assertTrue(tls[0]._context.check_hostname)
+                self.assertEqual(tls[0]._context.verify_mode,ssl.CERT_REQUIRED)
+
     def test_download_verification_cannot_return_success_after_deadline(self):
         class Slow(io.BytesIO):
             def read(self,size=-1):

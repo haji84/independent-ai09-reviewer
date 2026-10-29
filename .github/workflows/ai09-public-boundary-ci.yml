@@ -10,6 +10,9 @@ on:
       - source_archive.py
       - frozen_plan.py
       - sealed_input.py
+      - private_pilot.py
+      - tools/private_pilot.py
+      - tools/owner_bundle.py
       - pilot_batch.py
       - pilot_host.py
       - runtime_assets.py
@@ -30,6 +33,9 @@ on:
       - tests/test_source_archive.py
       - tests/test_frozen_plan.py
       - tests/test_sealed_input.py
+      - tests/test_private_pilot.py
+      - tests/fixtures/private_pilot_child.py
+      - tests/test_owner_bundle.py
       - tests/test_pilot_batch.py
       - tests/test_pilot_host.py
       - tests/test_runtime_assets.py

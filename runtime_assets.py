@@ -5,6 +5,7 @@ import pathlib
 import posixpath
 import re
 import selectors
+import ssl
 import subprocess
 import sys
 import tarfile
@@ -27,6 +28,40 @@ MODEL_CDN='dd20bb891979d25aebc8bec07b2b3bbc.r2.cloudflarestorage.com'
 MAX_CPU_BYTES=256*1024*1024
 MAX_TAR_BYTES=8*1024*1024*1024
 BLOCK=65536
+PUBLIC_TRANSPORT_ENV=('HTTP_PROXY','HTTPS_PROXY','ALL_PROXY','NO_PROXY',
+    'http_proxy','https_proxy','all_proxy','no_proxy','SSL_CERT_FILE','SSL_CERT_DIR',
+    'REQUESTS_CA_BUNDLE','CURL_CA_BUNDLE')
+
+
+def public_fetch_environment():
+    """Explicit PUBLIC-fetch transport only; never pass this to the offline model."""
+    environment={'PATH':os.defpath,'LD_LIBRARY_PATH':str(pathlib.Path(sys.base_prefix)/'lib')}
+    if os.name=='nt':environment['SYSTEMROOT']=os.environ['SYSTEMROOT']
+    for name in PUBLIC_TRANSPORT_ENV:
+        value=os.environ.get(name)
+        if value is not None:environment[name]=value
+    return environment
+
+
+def _public_proxy_handler():
+    # urllib has no automatic ALL_PROXY -> HTTPS fallback. Construct handlers
+    # from inherited configuration without changing that environment or NO_PROXY.
+    proxies=urllib.request.getproxies_environment()
+    fallback=proxies.get('all')
+    if fallback:
+        for scheme in ('http','https'):proxies.setdefault(scheme,fallback)
+    selected={name:value for name,value in proxies.items() if name in ('http','https','no')}
+    try:
+        for name in ('http','https'):
+            if name not in selected:continue
+            value=selected[name];parsed=urllib.parse.urlsplit(value)
+            require(parsed.scheme in ('http','https') and parsed.hostname
+                    and (parsed.port is None or 0<parsed.port<=65535)
+                    and not parsed.query and not parsed.fragment and parsed.path in ('','/')
+                    and not any(c in value for c in '\r\n\x00'),'PUBLIC_ASSET_PROXY_UNSUPPORTED')
+    except (ValueError,TypeError):
+        raise GateError('PUBLIC_ASSET_PROXY_UNSUPPORTED') from None
+    return urllib.request.ProxyHandler(selected)
 
 
 def remaining(deadline, maximum=600):
@@ -99,7 +134,14 @@ def _download(url, path, size, digest):
             self.count+=1
             require(self.count<=3 and allowed_url(newurl,True),'PUBLIC_ASSET_URL_BLOCKED')
             return super().redirect_request(request,response,code,message,headers,newurl)
-    opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),Redirects())
+    # OpenSSL trust variables take precedence. Honor requests/curl bundles when
+    # those are the only explicit CA settings; never disable TLS verification.
+    bundle=None
+    if not (os.environ.get('SSL_CERT_FILE') or os.environ.get('SSL_CERT_DIR')):
+        bundle=os.environ.get('REQUESTS_CA_BUNDLE') or os.environ.get('CURL_CA_BUNDLE')
+    context=ssl.create_default_context(cafile=bundle)
+    opener=urllib.request.build_opener(_public_proxy_handler(),Redirects(),
+                                      urllib.request.HTTPSHandler(context=context))
     total=0;actual=hashlib.sha256()
     with opener.open(url,timeout=15) as response,path.open('xb') as output:
         while block:=response.read1(BLOCK):
@@ -111,10 +153,9 @@ def _download(url, path, size, digest):
 
 
 def download(url,path,size,digest,deadline):
-    # A separate credential-free child gives headers/body/redirects one hard
+    # A separate key-free PUBLIC-transport child gives headers/body/redirects one hard
     # total timeout; urllib's per-socket timeout alone is not a wall-time bound.
-    child_env={'PATH':os.defpath,'LD_LIBRARY_PATH':str(pathlib.Path(sys.base_prefix)/'lib')}
-    if os.name=='nt':child_env['SYSTEMROOT']=os.environ['SYSTEMROOT']  # Windows TLS runtime, no credentials
+    child_env=public_fetch_environment()
     result=subprocess.run([sys.executable,'-I',str(pathlib.Path(__file__).resolve()),
                            'download',url,str(path),str(size),digest],
                           env=child_env,stdin=subprocess.DEVNULL,

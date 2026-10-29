@@ -2,8 +2,8 @@
 
 Preparation receives no source or key. Its opaque, single-use handle is valid
 only within that context and its original deadline. This is not an admission
-gate, model attestation or authority to run private inputs. No private CLI or
-workflow invokes it. The host process, reviewed code, Docker daemon and private
+gate, model attestation or authority to run private inputs. The parked connection
+retains its separate admission gate. The host process, code, Docker daemon and private
 output directory are trusted; this does not contain a hostile same-user host.
 """
 import contextlib
@@ -76,6 +76,8 @@ class PilotResult(ExportResult):
     context_rejection_sha256: str
     context_rejection_tokens: int
     elapsed_seconds: float
+    host_start_ns: int
+    host_end_ns: int
 
     def __repr__(self):
         return 'PilotResult()'
@@ -101,6 +103,17 @@ class _Runtime:
     blobs: tuple
     mounts: dict
     code_hashes: dict
+    container_name: str
+
+
+@dataclasses.dataclass(frozen=True, slots=True, repr=False)
+class CleanupInfo:
+    container_name: str
+    work_deadline: float
+    cleanup_deadline: float
+
+    def __repr__(self):
+        return 'CleanupInfo()'
 
 
 _prepared = weakref.WeakKeyDictionary()
@@ -132,7 +145,7 @@ def prepare_runtime():
         with tempfile.TemporaryDirectory(prefix='ai09-public-model-') as directory:
             base = pathlib.Path(directory); base.chmod(0o755)
             state = _Runtime(start, start+540, start+600, '', base/'runtime', {},
-                             base/'models', base/'manifest', (), {}, {})
+                             base/'models', base/'manifest', (), {}, {}, 'ai09-model-'+uuid.uuid4().hex)
             state.image_id = json.loads(_docker(state, 'image', 'inspect', policy.IMAGE).stdout)[0]['Id']
             archive = base/'ollama.tar.zst'
             assets.download(assets.OLLAMA_URL, archive, assets.OLLAMA_SIZE, assets.OLLAMA_SHA, state.work_deadline)
@@ -168,6 +181,15 @@ def _consume(prepared):
     state = _prepared.pop(prepared)  # Single attempt, including expiration/failure.
     assets.remaining(state.work_deadline)
     return state
+
+
+def prepared_cleanup_info(prepared):
+    """Read only live host-owned cleanup metadata; never consume or mint a handle."""
+    driver.require(type(prepared) is _PreparedRuntime and prepared in _prepared,
+                   'PREPARED_RUNTIME_UNAVAILABLE')
+    state = _prepared[prepared]
+    assets.remaining(state.work_deadline)
+    return CleanupInfo(state.container_name, state.work_deadline, state.cleanup_deadline)
 
 
 def _reverify(state):
@@ -228,7 +250,7 @@ def _observe(state, expected, input_class):
             'driver':state.code_hashes, 'ollama_archive':assets.OLLAMA_SHA, 'model':assets.MODEL_SHA,
             'model_blobs':state.blobs, 'context':expected.context(), 'input_class':input_class,
             'staged_input_sha':driver.digest(pilot_batch.encode_batch(expected))}
-        name = 'ai09-model-'+uuid.uuid4().hex
+        name = state.container_name
         try:
             args = ['create', '--name', name, '--pull=never', '--log-driver=none', '--network=none',
                 '--user=65534:65534', '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges',
@@ -399,7 +421,7 @@ def _run(state, expected, input_class, key, output_directory, envelope, verify):
     assets.remaining(state.work_deadline)
     return PilotResult(result.ciphertext_sha256, result.ciphertext_bytes,
         driver.digest(driver.encode_json(launch)), driver.digest(verified.payload),
-        rejection_hash, tokens, round(time.monotonic()-state.started, 2))
+        rejection_hash, tokens, round(time.monotonic()-state.started, 2), start, end)
 
 
 def run_public_pilot(prepared, *, run_id, attempt, commit, output_directory):
@@ -422,7 +444,7 @@ def run_frozen_pilot(prepared, archive_raw, plan_raw, key, *, run_id, attempt, c
 
     Obtain the prepared handle before reading private bytes/key. All 104 spans
     are freshly verified before selecting 000..007; callers supply no Batch,
-    VerifiedPlan, hash/selection/classification override. No workflow calls this.
+    VerifiedPlan, hash/selection/classification override. Admission remains separate.
     """
     try:
         state = _consume(prepared)

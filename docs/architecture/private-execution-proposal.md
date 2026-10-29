@@ -515,3 +515,57 @@ unconditional HOLD remain unchanged. There is no private-model invocation,
 encryption-key access, credential/permission/billing change or new artifact.
 Fixed-subject model receipts remain0/8 and0/104; formal GitHub approval is still
 required. Latest-HEAD CI for this additional repair remains pending.
+
+
+# Parked data-only connection candidate (2026-10-29)
+
+This section supersedes historical descriptions of the parked workflow's private
+Python execution body. The revision-2 connection design was independently reviewed
+by configured gpt-6.1-terra, with serving digest unobserved, before implementation:
+`docs/superpowers/specs/2026-10-29-private-wiring-design.md` (reviewed original
+SHA256 `5ee30873931ee9599d109f0ac60adf2a94743ce234514f4bdce3543e42f97538`).
+The original reviewed bytes and review receipt are retained locally. Technical
+review is not formal GitHub approval or permission to activate private work.
+
+The candidate uses one trusted key-bearing coordinator and one sanitized child.
+READY commits to the host-generated exact container name and existing monotonic
+work/cleanup deadlines. The child retains its original single-use prepared handle;
+only after valid READY does the coordinator read the bounded fixed ciphertext,
+check its independently approved hash/size and transmit key+ciphertext over one
+bounded pipe frame. Full47/104 verification occurs in codec and host; only first8
+are staged. There is no asset adoption, socket daemon, private Python import,
+provider extension, resource-limit change or extra PUBLIC model call.
+
+Actual host epoch observations and launch SHA flow directly to DONE and then a
+bounded public log observation after clean child exit and parent readback. The
+owner helper checks an independently retrieved exact run/attempt/job context,
+including unique complete timestamp-prefixed canonical log message, before key
+access. Launch reconstruction is checked against that external commitment, and
+all explicit expectations are passed to verify_frozen_evidence. Hash integrity
+alone never authenticates the context supplier. The pure reader caps decoded
+logs at16MiB, context16KiB and observation2048bytes; oversize legitimate logs would
+be refused rather than silently truncated or partially accepted.
+
+PUBLIC prefetch retains only explicitly inherited proxy/CA transport and verified
+TLS. HTTP(S) ALL_PROXY fallback is configured without rewriting the environment,
+and NO_PROXY remains effective. Offline Docker/capture/CPU extraction policies
+stay unchanged. Coordinator and child handle cooperative TERM; parent cleanup
+still cannot prove asynchronous daemon completion, survive its own SIGKILL/power
+loss, or contain malicious same-user/kernel/daemon inspection.
+
+Admission is now a separate unbound job with unconditional failure before any
+action. The existing protected Environment job depends on success and manual main
+context. Three optional public identity inputs cannot bypass this gate; the
+coordinator strictly requires nonempty values, haji84 and attempt1 before spawn.
+A literal-false pinned artifact proposal refers to one exact output file, retention
+one day and missing-file error. It is not an authorized upload. A future no-secret
+parked-main dispatch must confirm admission failure/downstream skip and no pending
+Environment review; that hosted observation remains NOT_RUN.
+
+The installed owner DPAPI filename/wrapper is still unverified. The real adapter
+returns OWNER_KEY_FORMAT_UNSUPPORTED and offers no plaintext-key alternative.
+Windows ACL/key compatibility, current ciphertext production/transfer, durable
+export approval, final-main/private activation and actual private model responses
+remain separate gates. Existing input recovery and key/Environment installation
+are already complete and must not be requested again. Private counts remain0/8
+and0/104. See the new plan for actual local verification results and review state.

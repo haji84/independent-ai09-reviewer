@@ -18,11 +18,12 @@ This repository intentionally contains only *public-safe* review bootstrap code.
 Do not dispatch the parked workflow. The owner-managed key and main-only
 `ai09-private-pilot` Environment are already installed, as recorded in the
 [Issue #3 owner amendment](https://github.com/haji84/independent-ai09-reviewer/issues/3#issuecomment-6431408757).
-Do not repeat that installation or disclose the key. Its retained
-private execution steps are **unsafe if the first HOLD is removed**: private
-tests/planning inherit the decryption key in the same step, have network/host
-access, and can modify later sealing and artifact files. Redirecting stdout and
-using an `.aesgcm` extension do not establish isolation or authentic encryption.
+Do not repeat that installation or disclose the key. The former
+private Python execution body has been replaced by the data-only connection
+below. An **unbound admission job always fails before checkout**; its protected
+Environment job requires admission success, so it stays skipped. No input enables
+execution. A hosted main dispatch confirming that no Environment review queues
+is still NOT_RUN; static dependency tests are not that observation.
 
 See [P0 evidence and restart gates](docs/architecture/public-boundary.md).
 Reopening requires the reviewed isolation implementation, adversarial isolation
@@ -62,7 +63,8 @@ The owner approved this data-only implementation and public synthetic tests.
 The recovered original plan now has an independently pinned read-only verifier:
 `frozen_plan.verify_plan` validates all104 spans and47 selected sources before
 `prepare_pilot_batch` selects000..007. The legacy production loader still fails
-with `FROZEN_PLAN_SCHEMA_UNVERIFIED`; no workflow calls the new frozen host path.
+with `FROZEN_PLAN_SCHEMA_UNVERIFIED`; the parked connection's child uses the new
+frozen host path only after its separate admission and READY protocol.
 Windows capture is disabled. Linux CI must verify process/container behavior.
 The production pilot HOLD stays in place. See the
 [architecture and activation gaps](docs/architecture/private-execution-proposal.md).
@@ -103,7 +105,70 @@ trusted. A failed write can leave incomplete ciphertext; it is never acknowledge
 as ready and is not overwritten on retry. These checks do not promise power-loss
 atomicity or interrupt a blocked kernel filesystem call.
 
-This host/export connection is a candidate awaiting its independent whole-change
+The current private connection candidate still requires independent whole-change
 review and fresh exact-head PUBLIC CI. Actual private counts remain **0/8 and0/104**.
+
+## Parked data-only connection and owner verification
+
+`tools/private_pilot.py` launches one sanitized child. The trusted coordinator
+already has the step-scoped Environment key in its own environment; the design
+does not claim whole-runner absence. The child prepares pinned PUBLIC assets,
+keeps its original host-owned handle and sends READY. Only then does the parent
+read the fixed encrypted input, check its owner-approved hash/size, read the key
+and send one bounded binary pipe frame. No key or source path enters child argv,
+child environment, Docker/model environment or a temporary key file. Explicit
+inherited proxy/CA configuration is retained only for PUBLIC fetch; unsupported
+proxy schemes fail closed and TLS verification remains enabled.
+
+The parent drains both control pipes while writing, rejects any stderr or extra
+frames, and uses the original 540-second work/600-second cleanup ceilings. It
+acknowledges output only after clean child completion and actual ciphertext
+readback. TERM/KILL and exact-name emergency cleanup are bounded; daemon absence
+is a point-in-time observation, not a guarantee about asynchronous work. Trusted
+host/kernel/daemon/same-user assumptions and filesystem/power-loss limits remain.
+
+The manual workflow exposes only three optional public identity strings:
+`approved_main_sha`, `input_ciphertext_sha256`, `input_ciphertext_bytes`.
+Empty values permit a later authorized no-secret HOLD-ordering check, but the
+coordinator requires all three before spawning. It also requires actual haji84,
+manual/main, attempt1 and checked-out SHA equality. These are authenticated owner
+claims bound to Actions context, not signatures. The unbound HOLD stays even
+with populated values.
+
+The future encrypted-only artifact proposal is **literally disabled**. It names
+one exact verified `ai09-observed-evidence.aesgcm` file in the run-owned output
+directory, with one-day retention, missing-file error and success-only conditions.
+No glob, partial failure output, raw log or automatic retry is uploaded. Its
+destination, capacity, retention and exact final main/private run still need the
+separate concrete owner gate before either activation or export is enabled.
+
+`tools/owner_bundle.py` provides pure input/evidence boundaries and owner-local
+`seal-input` / `verify-evidence` command structure. The installed DPAPI file's
+non-secret filename/wrapper contract is unverified, so its real key adapter
+deliberately returns `OWNER_KEY_FORMAT_UNSUPPORTED`. There is no plaintext-key
+argument or environment alternative. Existing key/Environment installation and
+input recovery are already complete; do not repeat them. Actual Windows ACL,
+CurrentUser DPAPI and installed-key roundtrip are NOT_RUN.
+
+Before eventual owner verification, a separate authenticated owner GitHub reader
+must retrieve the approved exact run, attempt and job metadata plus actual job
+log. `build_expected_context(...)` checks them against independently approved
+identities, selects the unique complete timestamp-prefixed canonical
+`AI09_HOST_OBSERVATION=` message, and constructs bounded canonical context bytes.
+Workflow source echoes do not count as observations. Deliver the context file
+and its SHA256 through that authenticated handoff. A digest calculated from an
+arbitrary supplied file does **not** establish its provenance.
+
+`verify-evidence` rejects missing/changed context before key access. It checks
+actual ciphertext against the external output identity, reconstructs the full
+launch only after matching its external commitment, and calls the existing
+frozen verifier with external run/attempt/commit and host times. It rechecks all
+47 sources/104 spans and the first eight observations. This establishes
+consistency with the separately retrieved reviewed-host observation; it does
+not establish hardware/model attestation, finding correctness or merge approval.
+Private findings stay local and the helper does not promote fixture counts.
+
+See the [reviewed connection design](docs/superpowers/specs/2026-10-29-private-wiring-design.md)
+and [bounded implementation plan](docs/superpowers/plans/2026-10-29-private-wiring.md).
 
 The runner uses local Ollama `qwen3:1.7b` with no paid hosted model APIs. Model answers are unverified until provenance, all chunks, and findings are independently reproduced. No automatic approval or merge.
