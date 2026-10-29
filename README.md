@@ -9,7 +9,7 @@ This repository intentionally contains only *public-safe* review bootstrap code.
 
 ## Private by encryption, even with a Public repository
 - The frozen 47-file / 104-chunk source ZIP must enter GitHub **only as AES-256-GCM ciphertext** `sealed/ai09-private-bundle.aesgcm`. The authenticated decryption gate verifies its original SHA-256: `9cf979733d8d4753023b1dd239ba4a5f3be2e0a6a3216c9dda206c089a2b6aa5`.
-- The 256-bit master secret goes *only* into the repository Actions secret `AI09_BUNDLE_KEY_B64`. Never put it in commits, issues, PR comments, logs, or artifacts.
+- The 256-bit master secret is installed *only* as `AI09_BUNDLE_KEY_B64` in the protected `ai09-private-pilot` Environment. Never put it in repository secrets, commits, issues, PR comments, logs, or artifacts.
 - Runner-only decrypted sources and raw receipts live in temporary storage. Only AES-256-GCM sealed receipts may be exported as workflow artifacts. Domain-separated keys prevent source and evidence cross-use.
 - Manual run on `main` only, read-only GitHub token, no writes, no publishing and no merge authority. The 8-chunk pilot is NOT an approved 104-chunk full audit.
 - **Public is still public:** the workflow code, timing, logs, and encrypted bytes remain observable. Confidentiality assumes the key is private and trusted workflow code/branch are protected.
