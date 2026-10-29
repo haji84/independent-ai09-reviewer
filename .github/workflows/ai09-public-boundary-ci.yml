@@ -10,6 +10,7 @@ on:
       - source_archive.py
       - frozen_plan.py
       - pilot_batch.py
+      - pilot_host.py
       - runtime_assets.py
       - confidential_capture.py
       - loopback_client.py
@@ -28,6 +29,7 @@ on:
       - tests/test_source_archive.py
       - tests/test_frozen_plan.py
       - tests/test_pilot_batch.py
+      - tests/test_pilot_host.py
       - tests/test_runtime_assets.py
       - tests/test_public_model_smoke.py
       - tools/public_model_smoke.py

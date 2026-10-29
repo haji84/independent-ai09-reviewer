@@ -17,6 +17,8 @@ import runtime_assets as assets
 from test_data_driver import response
 from test_pilot_batch import batch,observation,BASE,SECOND
 from test_context_probe import context_error
+from test_pilot_host import FakeRuntime
+import pilot_host
 
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
@@ -39,6 +41,39 @@ def public_packet():
 
 
 class PublicModelSmokeTest(unittest.TestCase):
+    def test_public_smoke_uses_shared_file_export_and_removes_its_temporary_ciphertext(self):
+        module=host();fake=FakeRuntime();seen=[];output=io.StringIO()
+        export=pilot_host._export_evidence
+        def record_export(payload,key,verify,directory,deadline):
+            result=export(payload,key,verify,directory,deadline)
+            path=pathlib.Path(directory)/'ai09-observed-evidence.aesgcm'
+            seen.append((path,path.read_bytes(),result))
+            return result
+        with fake.install(),patch.object(module,'capture',side_effect=fake.capture,create=True),\
+             patch.object(pilot_host,'_export_evidence',side_effect=record_export),\
+             patch.dict(os.environ,{'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1','GITHUB_SHA':'a'*40}),\
+             patch.object(module.sys,'stdout',output):
+            code=module.main()
+        self.assertEqual(code,0)
+        self.assertEqual(len(seen),1,'public integration never wrote and reverified the ciphertext file')
+        path,ciphertext,result=seen[0]
+        self.assertFalse(path.exists())
+        self.assertEqual(driver.digest(ciphertext),result.ciphertext_sha256)
+        self.assertIn('PUBLIC_EVIDENCE_ROUNDTRIP=PASS; OBSERVED_RESPONSES=8; FIXED_SUBJECT_RECEIPTS=0',output.getvalue())
+        self.assertIn('PUBLIC_EVIDENCE_FILE_READBACK=PASS',output.getvalue())
+        self.assertNotIn('PRIVATE-KEY-CANARY',output.getvalue())
+
+    def test_export_failure_is_fatal_and_does_not_print_exception_or_success(self):
+        module=host();fake=FakeRuntime();output=io.StringIO()
+        with fake.install(),patch.object(module,'capture',side_effect=fake.capture,create=True),\
+             patch.object(pilot_host,'_export_evidence',side_effect=OSError('PRIVATE-KEY-CANARY')) ,\
+             patch.dict(os.environ,{'GITHUB_RUN_ID':'123','GITHUB_RUN_ATTEMPT':'1','GITHUB_SHA':'a'*40}),\
+             patch.object(module.sys,'stdout',output):
+            code=module.main()
+        self.assertEqual(code,2)
+        self.assertNotIn('PRIVATE-KEY-CANARY',output.getvalue())
+        self.assertNotIn('=PASS',output.getvalue())
+
     def test_host_requires_negative_evidence_and_checks_it_after_normal_receipt(self):
         module=host();operation=getattr(module,'validate_public_packet',None)
         self.assertTrue(callable(operation),'host context rejection verification is missing')

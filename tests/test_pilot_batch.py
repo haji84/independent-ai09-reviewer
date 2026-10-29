@@ -1,10 +1,12 @@
 """PUBLIC eight-item observations, never original inputs or inference evidence."""
 import base64
+import contextlib
 import copy
 import dataclasses
 import datetime
 import importlib.util
 import unittest
+from unittest.mock import patch
 
 import context_probe
 import data_driver as driver
@@ -28,8 +30,8 @@ def batch():
         for i in range(8)))
 
 
-def observation():
-    expected = batch()
+def observation(expected=None):
+    expected = expected or batch()
     version = b'{"version":"0.34.0"}'
     tags = driver.encode_json({'models':[{'name':driver.MODEL,'digest':assets.MODEL_SHA}]})
     exchanges = []
@@ -47,11 +49,12 @@ def observation():
                 context_error(), BASE+18*SECOND, BASE+19*SECOND)}
 
 
-def launch():
+def launch(expected=None):
+    expected = expected or batch()
     return {'image':'sha256:'+'d'*64,'runtime':{'bin/ollama':'e'*64},
             'driver':{'/guest.py':'f'*64},'ollama_archive':assets.OLLAMA_SHA,
-            'model':assets.MODEL_SHA,'model_blobs':[['a'*64,100]],'context':batch().context(),
-            'input_class':'PUBLIC_SYNTHETIC','staged_input_sha':driver.digest(pilot.encode_batch(batch())),
+            'model':assets.MODEL_SHA,'model_blobs':[['a'*64,100]],'context':expected.context(),
+            'input_class':'PUBLIC_SYNTHETIC','staged_input_sha':driver.digest(pilot.encode_batch(expected)),
             'container_id':'1'*64,'inspection':{'NetworkMode':'none','ReadonlyRootfs':True}}
 
 
@@ -178,6 +181,191 @@ class PilotBatchTest(unittest.TestCase):
                 pilot.verify_evidence(recovered,batch(),launch(),BASE,BASE+20*SECOND)
         with self.assertRaises(driver.GateError):
             operation(b'x'*(driver.MAX_PACKET+1),batch(),launch(),BASE,BASE+20*SECOND)
+
+
+class FrozenEvidenceTest(unittest.TestCase):
+    """Generated PUBLIC archives exercise a separate contract, never inference."""
+
+    def setUp(self):
+        self.envelope = getattr(pilot, 'frozen_evidence_envelope', None)
+        self.verify = getattr(pilot, 'verify_frozen_evidence', None)
+        self.assertTrue(callable(self.envelope), 'fresh original-input evidence envelope missing')
+        self.assertTrue(callable(self.verify), 'fresh original-input evidence verification missing')
+        # Import lazily: the fixture module imports this module's PUBLIC helpers.
+        from test_frozen_plan import fixture, encode
+        import frozen_plan
+        self.frozen = frozen_plan
+        self.encode_plan = encode
+        self.archive, self.plan, self.files = fixture()
+        self.plan_raw = encode(self.plan)
+        self.host = {'run_id':'456', 'attempt':2, 'commit':'d'*40}
+        with self.pins():
+            self.expected = frozen_plan.prepare_pilot_batch(
+                self.archive, self.plan_raw, **self.host)
+        self.packet = driver.encode_json(observation(self.expected))
+        self.expected_launch = launch(self.expected)
+        self.expected_launch['input_class'] = 'FROZEN_DATA_ONLY'
+        self.window = {'host_start':BASE, 'host_end':BASE+20*SECOND}
+
+    @contextlib.contextmanager
+    def pins(self, plan_raw=None):
+        import source_archive
+        # Only generated test data receives substituted pins. No production override.
+        with patch.object(source_archive, 'FROZEN_SHA', driver.digest(self.archive)), \
+             patch.object(self.frozen, 'FROZEN_PLAN_SHA', driver.digest(
+                 self.plan_raw if plan_raw is None else plan_raw)):
+            yield
+
+    def options(self, **changes):
+        return dict(self.host, launch=self.expected_launch, **self.window) | changes
+
+    def make(self, packet=None):
+        with self.pins():
+            return self.envelope(self.packet if packet is None else packet,
+                                 self.archive, self.plan_raw, **self.options())
+
+    def replay(self, payload, **changes):
+        with self.pins():
+            return self.verify(payload, self.archive, self.plan_raw,
+                               **self.options(**changes))
+
+    def test_complete_original_packet_survives_encryption_with_no_authority_promotion(self):
+        # Noncanonical whitespace must survive; the exact captured bytes are evidence.
+        raw = b' \n'+self.packet+b'\n '
+        payload = self.make(raw)
+        value = driver.parse_json(payload, driver.MAX_PACKET)
+        self.assertEqual(value['schema'], 'AI09-FROZEN-OBSERVED-EVIDENCE-v1')
+        self.assertEqual(base64.b64decode(value['packet_b64']), raw)
+        self.assertEqual(value['context'], dict(self.host,
+            source_sha=driver.digest(self.archive), plan_sha=driver.digest(self.plan_raw)))
+        self.assertEqual(value['launch'], self.expected_launch)
+        encrypted = public_runner.seal(payload, bytes(range(32)), b'CONFIDENTIAL-REVIEW-EVIDENCE')
+        recovered = public_runner.unseal(encrypted, bytes(range(32)), b'CONFIDENTIAL-REVIEW-EVIDENCE')
+        verified = self.replay(recovered)
+        self.assertEqual(verified.payload, raw)
+        self.assertEqual(verified.observed_responses, 8)
+        self.assertEqual(verified.fixed_subject_receipts, 0)
+        self.assertEqual(repr(verified), 'ValidatedObservation()')
+
+    def test_original_pins_cannot_be_replaced_by_matching_envelope_metadata(self):
+        payload = self.make()
+        for operation, content in ((self.envelope, self.packet), (self.verify, payload)):
+            # Without test-only pins even a perfectly self-consistent fixture is refused.
+            with self.assertRaisesRegex(driver.GateError, '^FROZEN_SOURCE_HASH_MISMATCH$'):
+                operation(content, self.archive, self.plan_raw, **self.options())
+            with self.pins():
+                for archive, plan_raw, code in (
+                    (self.archive+b'X', self.plan_raw, 'FROZEN_SOURCE_HASH_MISMATCH'),
+                    (self.archive, self.plan_raw+b' ', 'FROZEN_PLAN_HASH_MISMATCH')):
+                    with self.subTest(operation=operation.__name__, code=code), \
+                         self.assertRaisesRegex(driver.GateError, '^'+code+'$'):
+                        operation(content, archive, plan_raw, **self.options())
+
+    def test_full_plan_is_revalidated_even_when_only_first_eight_are_observed(self):
+        payload = self.make()
+        broken = copy.deepcopy(self.plan)
+        last = broken['chunks'][103]
+        last['end_byte'] -= 1
+        content = self.files[last['path']]
+        last['sha256'] = driver.digest(content[last['start_byte']:last['end_byte']])
+        last['end_line'] = content[:last['end_byte']].count(b'\n')+1
+        broken_raw = self.encode_plan(broken)
+        # Recompute both test pins and the self-hash: the actual missing byte still fails.
+        with self.pins(broken_raw):
+            for operation, content in ((self.envelope, self.packet), (self.verify, payload)):
+                with self.subTest(operation=operation.__name__), \
+                     self.assertRaisesRegex(driver.GateError, '^FROZEN_PLAN_COVERAGE$'):
+                    operation(content, self.archive, broken_raw, **self.options())
+
+    def test_public_and_frozen_classification_cannot_be_swapped(self):
+        payload = self.make()
+        public_launch = dict(self.expected_launch, input_class='PUBLIC_SYNTHETIC')
+        public_payload = pilot.evidence_envelope(
+            self.packet, self.expected, public_launch, **self.window)
+        with self.assertRaises(driver.GateError):
+            pilot.evidence_envelope(self.packet, self.expected, self.expected_launch, **self.window)
+        with self.assertRaises(driver.GateError):
+            pilot.verify_evidence(payload, self.expected, public_launch, **self.window)
+        with self.pins():
+            for operation, content in ((self.envelope, self.packet), (self.verify, payload)):
+                with self.assertRaises(driver.GateError):
+                    operation(content, self.archive, self.plan_raw,
+                              **self.options(launch=public_launch))
+            with self.assertRaises(driver.GateError):
+                self.verify(public_payload, self.archive, self.plan_raw, **self.options())
+        # Renaming a class field cannot disguise a PUBLIC-schema envelope.
+        changed = driver.parse_json(public_payload, driver.MAX_PACKET)
+        changed['launch']['input_class'] = 'FROZEN_DATA_ONLY'
+        with self.assertRaises(driver.GateError):
+            self.replay(driver.encode_json(changed))
+
+    def test_external_run_launch_and_time_expectations_are_not_taken_from_payload(self):
+        payload = self.make()
+        changes = [dict(run_id='457'), dict(attempt=3), dict(commit='e'*40),
+                   dict(host_start=BASE+SECOND), dict(host_end=BASE+21*SECOND),
+                   dict(host_start=True)]
+        for field in ('container_id', 'image'):
+            changed = copy.deepcopy(self.expected_launch)
+            changed[field] = ('sha256:' if field == 'image' else '')+'2'*64
+            changes.append(dict(launch=changed))
+        for change in changes:
+            with self.subTest(field=tuple(change)), self.assertRaises(driver.GateError):
+                self.replay(payload, **change)
+        # A coherently changed run in both envelope and launch still differs from host.
+        changed = driver.parse_json(payload, driver.MAX_PACKET)
+        changed['context']['run_id'] = '457'
+        changed['launch']['context']['run_id'] = '457'
+        with self.assertRaises(driver.GateError):
+            self.replay(driver.encode_json(changed))
+
+    def test_authenticated_but_semantically_invalid_evidence_is_rejected(self):
+        payload = self.make()
+        cases = []
+        for mode in ('missing', 'inventory', 'rehashed-request', 'reversed'):
+            packet = driver.parse_json(self.packet, driver.MAX_PACKET)
+            if mode == 'missing': packet['exchanges'].pop()
+            elif mode == 'inventory': packet['tags_after'] = encoded(b'{}')
+            elif mode == 'reversed': packet['exchanges'].reverse()
+            else:
+                record = packet['exchanges'][0]
+                request = driver.parse_json(base64.b64decode(record['request_b64']))
+                request['truncate'] = True
+                request_raw = driver.encode_json(request)
+                record['request_b64'] = encoded(request_raw)
+                record['request_sha'] = driver.digest(request_raw)
+            value = driver.parse_json(payload, driver.MAX_PACKET)
+            value['packet_b64'] = encoded(driver.encode_json(packet))
+            cases.append((mode, driver.encode_json(value)))
+        for mode, altered in cases:
+            encrypted = public_runner.seal(altered, bytes(range(32)), b'CONFIDENTIAL-REVIEW-EVIDENCE')
+            recovered = public_runner.unseal(encrypted, bytes(range(32)), b'CONFIDENTIAL-REVIEW-EVIDENCE')
+            with self.subTest(mode=mode), self.assertRaises(driver.GateError):
+                self.replay(recovered)
+
+    def test_no_batch_selector_verified_plan_or_hash_override_is_accepted(self):
+        payload = self.make()
+        with self.pins():
+            for operation, content in ((self.envelope, self.packet), (self.verify, payload)):
+                for option in (dict(expected=self.expected), dict(batch_index=1),
+                               dict(source_sha=driver.digest(self.archive)),
+                               dict(expected_sha=driver.digest(self.archive))):
+                    with self.subTest(operation=operation.__name__, option=tuple(option)), \
+                         self.assertRaises(TypeError):
+                        operation(content, self.archive, self.plan_raw, **self.options(), **option)
+
+    def test_packet_that_fits_capture_must_also_fit_base64_envelope(self):
+        # For this 1021-byte launch, 2,000,000 total minus 131,072 reserved metadata
+        # leaves 1,867,907 encoded bytes: at most 466,976 complete base64 groups.
+        accepted_size, refused_size = 1_400_928, 1_400_929
+        self.assertEqual(len(driver.encode_json(self.expected_launch)), 1021)
+        accepted = self.packet+b' '*(accepted_size-len(self.packet))
+        refused = self.packet+b' '*(refused_size-len(self.packet))
+        self.assertEqual(pilot.verify_observation(
+            refused, self.expected, **self.window).payload, refused)
+        self.assertEqual(self.replay(self.make(accepted)).payload, accepted)
+        for raw in (refused, self.packet+b' '*(2_000_001-len(self.packet))):
+            with self.assertRaises(driver.GateError):
+                self.make(raw)
 
 
 if __name__ == '__main__':

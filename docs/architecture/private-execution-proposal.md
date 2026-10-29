@@ -8,6 +8,59 @@ The production pilot admission failure remains unchanged. Counts remain 0/8 and
 
 ## 2026-10-29 offline original-to-pilot input connection
 
+### Shared host and verified ciphertext export candidate
+
+`pilot_host` now extracts the existing PUBLIC model lifecycle into a shared
+controller. `prepare_runtime()` accepts no input/key and retains the original
+540-second work deadline and600-second cleanup horizon. Only a live, host-owned,
+single-use handle can start one operation. The PUBLIC entrypoint creates its fixed
+eight toy chunks and PUBLIC test key itself. A separate frozen library entrypoint
+derives all expectations from the pinned original archive/raw plan and accepts no
+Batch, selector or hash override. No CLI or workflow calls the frozen entrypoint.
+
+Both paths preserve the existing offline/nonroot/read-only inspected container,
+450-second guest limit,2MB capture, PATH-only Docker environment, one0444 input
+file in a0700 staging directory and no key/originalZIP/plan mount. Raw output is
+released only after positive kill/wait/inspect stop and accepted disabled-log
+evidence. Even a timed-out create is removed by its unique generated name;
+point-in-time absence is checked. An unverified cleanup prevents sealing/export.
+That listing is not proof that an asynchronous daemon create could never finish
+later; no actual asynchronous-create fault experiment has been performed.
+
+`pilot_batch` retains strict PUBLIC functions and adds a distinct
+`FROZEN_DATA_ONLY`/`AI09-FROZEN-OBSERVED-EVIDENCE-v1` contract. Construction and
+verification freshly derive all104 spans/47-source expectations from external
+raw inputs, then select000..007. The complete raw packet is preserved. External
+host run identity, launch and time window remain required after decryption.
+Consistency is not cryptographic execution attestation or findings validation.
+
+The controller seals only a verified envelope, then decrypts and verifies it in
+memory before any write. It walks every output-directory component without
+following links, requires caller-owned0700, creates one fixed0600 file exclusively,
+handles partial writes and checks file/directory fsync. Reopened bytes must have
+the same inode, size, type, owner, mode, single link, timestamps and ciphertext
+digest; current file/directory entries and every root-to-directory ancestor
+relationship are rechecked by retained descriptor/name/device/inode/type.
+Actual reopened bytes are
+authenticated, decrypted and semantically verified before safe metadata returns.
+Existing files are never overwritten or removed. Failed writes may leave encrypted
+partial bytes; they are not ready exports. This assumes a trusted host/Docker and
+private output directory, not containment of another hostile same-user process.
+Power-loss atomicity and interruption of a blocked filesystem syscall are not promised.
+
+The existing PUBLIC smoke exercises this path and removes its temporary file
+normally. There is no new model call, artifact/cache upload or workflow step.
+The orchestrator-selected `gpt-6.1-terra` design review required these boundaries;
+its selection and advisory response are available, but no serving digest/formal
+GitHub review is inferred. Initial whole-change review found a reproducible
+ancestor-rename P2, repaired with two real-rename regression subtests and a
+161/161 complete unit run. Targeted re-review and fresh exact-head PUBLIC CI
+remain pending for this candidate. The parked production workflow, loader and
+private activation remain unchanged; actual fixed-subject counts remain0/8 and0/104.
+
+The dated offline connection below describes the preceding stage; the candidate
+above adds the host/export implementation, without granting private execution.
+
 `frozen_plan.prepare_pilot_batch` connects the existing whole-input verifier to
 the host's bounded eight-item staging contract. It freshly verifies the fixed
 archive and RAW plan bytes, including all104 spans and complete47-source

@@ -16,6 +16,8 @@ import runtime_assets as assets
 STAGING_SCHEMA = 'AI09-STAGED-BATCH-v1'
 OBSERVATION_SCHEMA = 'AI09-OBSERVED-BATCH-v1'
 EVIDENCE_SCHEMA = 'AI09-OBSERVED-EVIDENCE-v1'
+FROZEN_EVIDENCE_SCHEMA = 'AI09-FROZEN-OBSERVED-EVIDENCE-v1'
+FROZEN_INPUT_CLASS = 'FROZEN_DATA_ONLY'
 RECORD_KEYS = ('chunk_id', 'input_sha', 'request_sha', 'response_sha',
                'request_b64', 'response_b64')
 
@@ -127,14 +129,14 @@ def verify_observation(raw, expected, host_start, host_end):
     return ValidatedObservation(raw)
 
 
-def _launch_bytes(launch, expected):
+def _launch_bytes(launch, expected, input_class):
     driver.exact_keys(launch, ('image', 'runtime', 'driver', 'ollama_archive',
         'model', 'model_blobs', 'context', 'input_class', 'staged_input_sha',
         'container_id', 'inspection'))
     need(type(launch['image']) is str and re.fullmatch(r'sha256:[0-9a-f]{64}', launch['image']))
     need(driver.valid_hash(launch['container_id']))
     need(launch['ollama_archive'] == assets.OLLAMA_SHA and launch['model'] == assets.MODEL_SHA)
-    need(launch['input_class'] == 'PUBLIC_SYNTHETIC')  # No private activation by metadata.
+    need(launch['input_class'] == input_class)
     need(launch['context'] == expected.context() and type(launch['context']['attempt']) is int)
     need(launch['staged_input_sha'] == driver.digest(encode_batch(expected)))
     for name in ('runtime', 'driver'):
@@ -153,34 +155,77 @@ def _launch_bytes(launch, expected):
     return raw
 
 
+def _evidence_envelope(raw, expected, launch, host_start, host_end, *, input_class, schema):
+    _eight(expected)
+    need(type(raw) is bytes and len(raw) <= driver.MAX_PACKET)
+    launch_raw = _launch_bytes(launch, expected, input_class)
+    need(4*((len(raw)+2)//3)+len(launch_raw)+driver.MAX_JSON <= driver.MAX_PACKET)
+    verify_observation(raw, expected, host_start, host_end)
+    payload = driver.encode_json({'schema':schema, 'context':expected.context(),
+        'host_start':host_start, 'host_end':host_end, 'launch':launch, 'packet_b64':_encode(raw)})
+    need(len(payload) <= driver.MAX_PACKET)
+    return payload
+
+
+def _verify_evidence(payload, expected, launch, host_start, host_end, *, input_class, schema):
+    _eight(expected)
+    _launch_bytes(launch, expected, input_class)
+    value = driver.parse_json(payload, driver.MAX_PACKET)
+    driver.exact_keys(value, ('schema', 'context', 'host_start', 'host_end', 'launch', 'packet_b64'))
+    need(value['schema'] == schema and value['context'] == expected.context())
+    need(type(value['host_start']) is int and type(value['host_end']) is int)
+    need(value['host_start'] == host_start and value['host_end'] == host_end)
+    need(driver.encode_json(value['launch']) == driver.encode_json(launch))
+    raw = _decode(value['packet_b64'], driver.MAX_PACKET)
+    rebuilt = _evidence_envelope(raw, expected, launch, host_start, host_end,
+                                 input_class=input_class, schema=schema)
+    need(payload == rebuilt)
+    return verify_observation(raw, expected, host_start, host_end)
+
+
 def evidence_envelope(raw, expected, launch, host_start, host_end):
     """Preserve COMPLETE observation and host-owned launch, not only inner records.
 
     The host must inspect the actual container and obtain its own launch/times.
     PUBLIC-only here: this contract cannot enable confidential inference.
     """
-    _eight(expected)
-    need(type(raw) is bytes and len(raw) <= driver.MAX_PACKET)
-    launch_raw = _launch_bytes(launch, expected)
-    need(4*((len(raw)+2)//3)+len(launch_raw)+driver.MAX_JSON <= driver.MAX_PACKET)
-    verify_observation(raw, expected, host_start, host_end)
-    payload = driver.encode_json({'schema':EVIDENCE_SCHEMA, 'context':expected.context(),
-        'host_start':host_start, 'host_end':host_end, 'launch':launch, 'packet_b64':_encode(raw)})
-    need(len(payload) <= driver.MAX_PACKET)
-    return payload
+    return _evidence_envelope(raw, expected, launch, host_start, host_end,
+                              input_class='PUBLIC_SYNTHETIC', schema=EVIDENCE_SCHEMA)
 
 
 def verify_evidence(payload, expected, launch, host_start, host_end):
     """Authenticated decryption does not replace independent semantic verification."""
-    _eight(expected)
-    _launch_bytes(launch, expected)
-    value = driver.parse_json(payload, driver.MAX_PACKET)
-    driver.exact_keys(value, ('schema', 'context', 'host_start', 'host_end', 'launch', 'packet_b64'))
-    need(value['schema'] == EVIDENCE_SCHEMA and value['context'] == expected.context())
-    need(type(value['host_start']) is int and type(value['host_end']) is int)
-    need(value['host_start'] == host_start and value['host_end'] == host_end)
-    need(driver.encode_json(value['launch']) == driver.encode_json(launch))
-    raw = _decode(value['packet_b64'], driver.MAX_PACKET)
-    rebuilt = evidence_envelope(raw, expected, launch, host_start, host_end)
-    need(payload == rebuilt)
-    return verify_observation(raw, expected, host_start, host_end)
+    return _verify_evidence(payload, expected, launch, host_start, host_end,
+                            input_class='PUBLIC_SYNTHETIC', schema=EVIDENCE_SCHEMA)
+
+
+def frozen_evidence_envelope(raw, archive_raw, plan_raw, *, run_id, attempt, commit,
+                             launch, host_start, host_end):
+    """Freshly bind a complete observed packet to the original pinned inputs.
+
+    Validate all 104 spans and 47 sources before deriving only 000..007. Launch
+    and times must come from the trusted host, not from the guest packet. This
+    consistency contract performs no model call and grants no activation,
+    execution attestation, finding accuracy, receipt count or approval.
+    """
+    # Local import avoids the input adapter's staging-contract dependency cycle.
+    import frozen_plan
+    expected = frozen_plan.prepare_pilot_batch(archive_raw, plan_raw,
+        run_id=run_id, attempt=attempt, commit=commit)
+    return _evidence_envelope(raw, expected, launch, host_start, host_end,
+        input_class=FROZEN_INPUT_CLASS, schema=FROZEN_EVIDENCE_SCHEMA)
+
+
+def verify_frozen_evidence(payload, archive_raw, plan_raw, *, run_id, attempt, commit,
+                           launch, host_start, host_end):
+    """Reverify decrypted bytes against fresh original inputs and host context.
+
+    No caller-created Batch, VerifiedPlan, hash override or embedded expected
+    identity is accepted. A caller who can choose the key and all host context
+    can still fabricate consistent evidence: validation is not attestation.
+    """
+    import frozen_plan
+    expected = frozen_plan.prepare_pilot_batch(archive_raw, plan_raw,
+        run_id=run_id, attempt=attempt, commit=commit)
+    return _verify_evidence(payload, expected, launch, host_start, host_end,
+        input_class=FROZEN_INPUT_CLASS, schema=FROZEN_EVIDENCE_SCHEMA)
