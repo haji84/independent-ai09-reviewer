@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseQualityPacket,selectLineWindow,pairedAuthorizationControls,pairedSecurityControls,publicPacketDiagnostics} from '../src/model-quality-probe.mjs';
+import {parseQualityPacket,selectLineWindow,pairedAuthorizationControls,pairedSecurityControls,publicPacketDiagnostics,scoreModelCalibration} from '../src/model-quality-probe.mjs';
 const pkt=o=>({model:'qwen2.5-coder:7b',done:true,done_reason:'stop',
  message:{content:JSON.stringify(o)}});
 test('known-bad and defensive verdicts retain bounded code locations',()=>{
@@ -91,4 +91,48 @@ test('diagnostic telemetry distinguishes format/semantic errors without leaking 
  assert.equal(unknown.integerLine,false);
  assert.equal(JSON.stringify(unknown).includes('UNTRUSTED-MODEL-SECRET'),false);
  assert.equal(publicPacketDiagnostics({...pkt({}),message:{content:'bad'}},3).kind,'INVALID');
+});
+
+
+test('metrics separate FP and FN from abstentions and malformed responses',()=>{
+ const f=pairedSecurityControls();
+ const r=[
+  {id:f[0].id,verdict:'NO_FINDINGS'},
+  {id:f[1].id,verdict:'CHANGES_REQUESTED',category:'AUTH'},
+  {id:f[2].id,verdict:'INCONCLUSIVE'},
+  {id:f[3].id,verdict:'INVALID'}
+ ];
+ const s=scoreModelCalibration(f,r);
+ assert.deepEqual([s.positive,s.negative,s.fn,s.fp,s.abstain,s.invalid,s.pending],
+   [4,4,1,1,1,1,4]);
+ assert.equal(s.observedFPR,0.25);
+ assert.equal(s.observedFNR,0.25);
+ assert.equal(s.status,'BENCHMARK_PARTIAL');
+ assert.equal(s.passed,false);
+});
+test('only all exact known-bad and known-safe verdicts pass a smoke gate',()=>{
+ const f=pairedSecurityControls();
+ const all=f.map(x=>({id:x.id,verdict:x.expected,
+   category:x.expected==='CHANGES_REQUESTED'?x.expectedCategory:'NONE',line:2}));
+ const good=scoreModelCalibration(f,all);
+ assert.equal(good.passed,true);
+ assert.equal(good.tp,4);
+ assert.equal(good.tn,4);
+ assert.equal(good.formalGitHubApproval,false);
+ assert.equal(good.modelPromotionAuthorized,false);
+ const wrong=all.map((x,i)=>i===2?{...x,category:'OTHER'}:x);
+ assert.equal(scoreModelCalibration(f,wrong).wrongCategory,1);
+ assert.equal(scoreModelCalibration(f,wrong).passed,false);
+});
+test('duplicate and unknown model receipts cannot count as reviewed',()=>{
+ const f=pairedSecurityControls();
+ assert.throws(()=>scoreModelCalibration(f,[{id:f[0].id,verdict:'INVALID'},
+   {id:f[0].id,verdict:'NO_FINDINGS'}]),/AI09_BENCHMARK_RECORD_INVALID/u);
+ assert.throws(()=>scoreModelCalibration(f,[{id:'not-a-fixture',verdict:'NO_FINDINGS'}]),
+   /AI09_BENCHMARK_RECORD_INVALID/u);
+ const unknown=f.map(x=>({id:x.id,verdict:'INVALID'}));
+ const r=scoreModelCalibration(f,unknown);
+ assert.equal(r.status,'CALIBRATION_FAILED');
+ assert.equal(r.invalid,8);
+ assert.equal(r.fp,0);assert.equal(r.fn,0);
 });
