@@ -1,10 +1,13 @@
 name: AI09 Model Calibration Candidate
+# No unreviewed push-triggered model execution; bounded manual dispatch on
+# independently-reviewed default-branch code only.
 on:
-  push:
-    branches: [audit/remote-lite-1832]
-    paths:
-      - src/calibrate-model.mjs
-      - .github/workflows/model-calibration.yml
+  workflow_dispatch:
+    inputs:
+      approved_head:
+        description: 'Explicitly approved default-branch reviewer SHA'
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -12,7 +15,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   calibration:
-    if: github.repository == 'haji84/independent-ai09-reviewer'
+    if: github.repository == 'haji84/independent-ai09-reviewer' && github.ref == 'refs/heads/main' && github.event.inputs.approved_head == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -33,6 +36,7 @@ jobs:
           set -euo pipefail
           test "$RUNNER_ENVIRONMENT" = github-hosted
           test "$RUNNER_OS" = Linux
+          test "$GITHUB_REF" = refs/heads/main
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           node --check src/calibrate-model.mjs
       - name: Install verified standalone Ollama

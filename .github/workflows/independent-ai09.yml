@@ -18,12 +18,16 @@ concurrency:
 
 jobs:
   reviewer-candidate:
-    if: github.repository == 'haji84/independent-ai09-reviewer' && github.event.inputs.approved_head == github.sha
+    if: github.repository == 'haji84/independent-ai09-reviewer' && github.ref == 'refs/heads/main' && github.event.inputs.approved_head == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       AI09_BASE_SHA: 99d4e1568fa15c7cab48fc343cd5521c0f8c9512
       AI09_HEAD_SHA: ee2238cdbe0be218d7a2d47bad234c5f0836bf20
+      # Historical 7B digest: fail closed if the model tag resolves differently.
+      AI09_EXPECTED_MODEL_DIGEST: dae161e27b0e90dd1856c8bb3209201fd6736d8eb66298e75ed87571486f4364
+      # No secret is created here. Provisioning requires a separate human gate.
+      AI09_PRIVATE_FINDINGS_KEY_HEX: ${{ secrets.AI09_PRIVATE_FINDINGS_KEY_HEX }}
       OLLAMA_HOST: 127.0.0.1:11434
       OLLAMA_NUM_PARALLEL: '1'
       OLLAMA_MAX_LOADED_MODELS: '1'
@@ -43,7 +47,7 @@ jobs:
           test "$RUNNER_ENVIRONMENT" = github-hosted
           test "$RUNNER_OS" = Linux
           test "$GITHUB_REPOSITORY" = haji84/independent-ai09-reviewer
-          test "$GITHUB_REF" = refs/heads/audit/remote-lite-1832
+          test "$GITHUB_REF" = refs/heads/main
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           node --check src/ai09-independent.mjs
       - name: Install SHA256-pinned Ollama on disposable hosted runner
@@ -75,6 +79,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ai09-independent-candidate-proof
-          path: ai09-independent-proof.json
+          path: |
+            ai09-independent-proof.json
+            ai09-private-findings.enc.json
           if-no-files-found: warn
           retention-days: 3

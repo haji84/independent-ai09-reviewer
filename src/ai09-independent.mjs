@@ -7,9 +7,11 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {TextDecoder} from 'node:util';
 import {parseSafePublicReview,summarizePartialModelReview} from './review-schema.mjs';
+import {sealPrivateModelFindings} from './private-findings.mjs';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 const fail=code=>{throw Error(code);};
 const base=process.env.AI09_BASE_SHA??'',head=process.env.AI09_HEAD_SHA??'';
+const encryptedFindings=[];
 const model='qwen2.5-coder:7b';
 const root=mkdtempSync(join(tmpdir(),'isolated-ai09-'));
 const dir=join(root,'source');
@@ -82,7 +84,11 @@ function split(entry,side,list){
 async function run(){
   if(!/^[0-9a-f]{40}$/u.test(base)||!/^[0-9a-f]{40}$/u.test(head)||base===head||
     process.env.GITHUB_REPOSITORY!=='haji84/independent-ai09-reviewer'||
-    process.env.RUNNER_ENVIRONMENT!=='github-hosted')fail('AI09_UNAUTHORIZED_SCOPE');
+    process.env.RUNNER_ENVIRONMENT!=='github-hosted'||
+    process.env.GITHUB_REF!=='refs/heads/main')fail('AI09_UNAUTHORIZED_SCOPE');
+  const keyHex=process.env.AI09_PRIVATE_FINDINGS_KEY_HEX??'';
+  if(!/^[a-f0-9]{64}$/u.test(keyHex))fail('AI09_PRIVATE_FINDINGS_KEY_MISSING');
+  const privateKey=Buffer.from(keyHex,'hex');
   mkdirSync(dir);
   git('init','-q');
   git('remote','add','origin','https://github.com/haji84/AI-.git');
@@ -123,6 +129,9 @@ async function run(){
   const models=(await tags.json()).models;
   review.digest=models?.find(x=>x.name===model||x.model===model)?.digest??null;
   if(!/^[a-f0-9]{64}$/u.test(review.digest??''))fail('AI09_MODEL_ID_MISSING');
+  const expectedDigest=process.env.AI09_EXPECTED_MODEL_DIGEST??'';
+  if(!/^[a-f0-9]{64}$/u.test(expectedDigest)||review.digest!==expectedDigest)
+    fail('AI09_UNPINNED_OR_CHANGED_MODEL');
   const priority=new Set([
     'src/remote-lite/owner-auth.mjs',
     'src/remote-lite/owner-portal.mjs',
@@ -154,6 +163,14 @@ async function run(){
       started,modelDigest:review.digest,verdict:'BLOCKED',findings:[]};
     review.records.push(entry);
     const parsed=parseSafePublicReview(packet,model);
+    const sealed=sealPrivateModelFindings(packet,model,{
+      baseSha:base,headSha:head,reviewerSha:process.env.GITHUB_SHA,
+      manifestSha256:review.manifestSha256,modelDigest:review.digest,
+      path:s.path,side:s.side,start:s.start,end:s.end,
+      sourceSha256:s.sha256,promptSha256:entry.promptSha256,
+      responseSha256:entry.responseSha256,sliceId:entry.manifestSliceId
+    },privateKey);
+    encryptedFindings.push(sealed);
     entry.verdict=parsed.verdict;
     entry.findings=parsed.findings;
     entry.finished=new Date().toISOString();
@@ -185,6 +202,10 @@ finally{
   rmSync(root,{recursive:true,force:true});
   review.evidenceSha256=hash(JSON.stringify({...review,evidenceSha256:null}));
   writeFileSync('ai09-independent-proof.json',JSON.stringify(review,null,2)+'\n',{flag:'wx',mode:0o600});
+  if(encryptedFindings.length)
+    writeFileSync('ai09-private-findings.enc.json',JSON.stringify({
+      kind:'AI09_ENCRYPTED_FINDINGS_V1',envelopes:encryptedFindings
+    })+'\n',{flag:'wx',mode:0o600});
   console.log('AI09_REVIEW_STATUS='+review.status);
   console.log('AI09_REVIEWED='+review.reviewedSlices+'/'+review.totalSlices);
   console.log('AI09_FORMAL_APPROVAL=false');
