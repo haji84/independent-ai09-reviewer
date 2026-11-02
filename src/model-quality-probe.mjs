@@ -31,6 +31,29 @@ export function parseQualityPacket(packet,maxLine){
     fail('AI09_QUALITY_SCHEMA_INVALID');
  return value;
 }
+
+/** Public-safe structural telemetry. Never include raw model strings or source text. */
+export function publicPacketDiagnostics(packet,maxLine){
+ const raw=packet?.message?.content;
+ const result={kind:'INVALID',jsonObject:false,exactKeys:false,
+   verdict:'UNRECOGNIZED',category:'UNRECOGNIZED',
+   integerLine:false,validLineRange:false,
+   modelIdMatches:packet?.model===MODEL,done:packet?.done===true,
+   stopReason:packet?.done_reason==='stop'};
+ if(typeof raw!=='string'||Buffer.byteLength(raw,'utf8')>2048)return result;
+ let obj;
+ try{obj=JSON.parse(raw)}catch{return result;}
+ if(!obj||typeof obj!=='object'||Array.isArray(obj))return result;
+ result.kind='JSON_OBJECT';result.jsonObject=true;
+ result.exactKeys=Object.keys(obj).sort().join(',')==='category,line,verdict';
+ result.verdict=verdicts.includes(obj.verdict)?obj.verdict:'UNRECOGNIZED';
+ result.category=categories.includes(obj.category)?obj.category:'UNRECOGNIZED';
+ result.integerLine=Number.isSafeInteger(obj.line);
+ result.validLineRange=result.integerLine&&
+    (obj.line===0||(Number.isSafeInteger(maxLine)&&obj.line>=1&&obj.line<=maxLine));
+ return result;
+}
+
 export function selectLineWindow(text,start,end,maxBytes=1900){
  if(typeof text!=='string'||!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||
     start<1||end<start)fail('AI09_QUALITY_SOURCE_WINDOW_INVALID');
@@ -169,7 +192,9 @@ async function run(){
        start:real.start,end:real.end}:null,
      verdict:'BLOCKED',category:'NONE',line:0};
    proof.cases.push(record);
-   const parsed=parseQualityPacket(packet,item.maxLine);
+   let parsed;
+   try{parsed=parseQualityPacket(packet,item.maxLine);}
+   catch(e){record.responseDiagnostics=publicPacketDiagnostics(packet,item.maxLine);throw e;}
    record.verdict=parsed.verdict;record.category=parsed.category;record.line=parsed.line;
    console.log('AI09_QWEN7B_PROBE='+item.id+' VERDICT='+record.verdict+
      ' CATEGORY='+record.category+' LINE='+record.line);

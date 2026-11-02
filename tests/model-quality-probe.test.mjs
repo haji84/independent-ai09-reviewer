@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseQualityPacket,selectLineWindow,pairedAuthorizationControls,pairedSecurityControls} from '../src/model-quality-probe.mjs';
+import {parseQualityPacket,selectLineWindow,pairedAuthorizationControls,pairedSecurityControls,publicPacketDiagnostics} from '../src/model-quality-probe.mjs';
 const pkt=o=>({model:'qwen2.5-coder:7b',done:true,done_reason:'stop',
  message:{content:JSON.stringify(o)}});
 test('known-bad and defensive verdicts retain bounded code locations',()=>{
@@ -69,4 +69,26 @@ test('benchmark model parses strict positive and negative multi-category verdict
    assert.equal(parseQualityPacket(pkt({verdict:'CHANGES_REQUESTED',category,line:2}),4).category,category);
  }
  assert.throws(()=>parseQualityPacket(pkt({verdict:'INCONCLUSIVE',category:'SECRET',line:1}),4),/AI09_QUALITY_SCHEMA_INVALID/u);
+});
+
+
+test('diagnostic telemetry distinguishes format/semantic errors without leaking untrusted model strings',()=>{
+ const safe=publicPacketDiagnostics(pkt({verdict:'CHANGES_REQUESTED',category:'AUTH',line:2}),3);
+ assert.equal(safe.kind,'JSON_OBJECT');
+ assert.equal(safe.exactKeys,true);
+ assert.equal(safe.verdict,'CHANGES_REQUESTED');
+ assert.equal(safe.validLineRange,true);
+ const bad=publicPacketDiagnostics(pkt({verdict:'CHANGES_REQUESTED',
+   category:'SECRET',line:7,token:'Authorization: Bearer SUPERSECRET'}),3);
+ assert.equal(bad.kind,'JSON_OBJECT');
+ assert.equal(bad.exactKeys,false);
+ assert.equal(bad.validLineRange,false);
+ assert.equal(JSON.stringify(bad).includes('SUPERSECRET'),false);
+ const unknown=publicPacketDiagnostics(pkt({verdict:'NONSENSE',
+   category:'UNTRUSTED-MODEL-SECRET',line:'2'}),3);
+ assert.equal(unknown.verdict,'UNRECOGNIZED');
+ assert.equal(unknown.category,'UNRECOGNIZED');
+ assert.equal(unknown.integerLine,false);
+ assert.equal(JSON.stringify(unknown).includes('UNTRUSTED-MODEL-SECRET'),false);
+ assert.equal(publicPacketDiagnostics({...pkt({}),message:{content:'bad'}},3).kind,'INVALID');
 });
