@@ -1,0 +1,156 @@
+name: AI09 Reviewer Offline Security Tests
+on:
+  pull_request:
+    branches: [main]
+  # Owner-triggered one-shot advisory only. Not on unreviewed pushes.
+  pull_request_review:
+    types: [submitted]
+permissions: {}
+jobs:
+  synthetic-validators-only:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+      - run: |
+          node --check src/ai09-independent.mjs
+          node --check src/review-schema.mjs
+          node --check src/receipt-coverage.mjs
+          node --check src/receipt-ledger.mjs
+          node --check src/checkpoint-seal.mjs
+          node --check src/private-findings.mjs
+          node --check src/verify-independent-approval.mjs
+          node --check src/model-advisory-gemma.mjs
+          node --check src/model-quality-probe.mjs
+          node --check src/quality-holdout.mjs
+          node --test tests/review-schema.test.mjs tests/receipt-coverage.test.mjs tests/receipt-ledger.test.mjs tests/checkpoint-seal.test.mjs tests/private-findings.test.mjs tests/verify-independent-approval.test.mjs tests/model-advisory-gemma.test.mjs tests/model-quality-probe.test.mjs
+
+  separate-gemma-advisory:
+    if: >-
+      github.event_name == 'pull_request_review' &&
+      github.repository == 'haji84/independent-ai09-reviewer' &&
+      github.event.pull_request.number == 1 &&
+      github.event.review.user.login == 'haji84' &&
+      github.event.review.state == 'commented' &&
+      github.event.review.body == 'AI09_GEMMA_SINGLE_ADVISORY_APPROVED_20261102'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      ADVISORY_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      OLLAMA_HOST: 127.0.0.1:11434
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+      - name: Enforce read-only scoped immutable source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = haji84/independent-ai09-reviewer
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$(git rev-parse HEAD)" = "$ADVISORY_HEAD_SHA"
+          node --check src/model-advisory-gemma.mjs
+      - name: Install pinned Ollama binary (no secrets or external credentials)
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 2 --max-time 300 \
+            https://github.com/ollama/ollama/releases/download/v0.34.0/ollama-linux-amd64.tar.zst \
+            -o "$RUNNER_TEMP/ollama-linux-amd64.tar.zst"
+          echo "cf95886728959aa09910bb34de5cca1cc5a8f68003b5597197d3f2c2d57c0804  $RUNNER_TEMP/ollama-linux-amd64.tar.zst" | sha256sum -c -
+          sudo tar --zstd -xf "$RUNNER_TEMP/ollama-linux-amd64.tar.zst" -C /usr
+      - name: Pull and run distinct Gemma model, no code execution from target files
+        run: |
+          set -euo pipefail
+          ollama serve >"$RUNNER_TEMP/ai09-gemma-advisory.log" 2>&1 &
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1
+          timeout 600s ollama pull gemma3:1b
+          node src/model-advisory-gemma.mjs
+      - name: Upload digest-only advisory evidence; never approve or merge
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai09-gemma-separate-model-advisory
+          path: ai09-separate-gemma-proof.json
+          if-no-files-found: warn
+          retention-days: 3
+
+  qwen14b-selection-quality:
+    if: >-
+      github.event_name == 'pull_request_review' &&
+      github.repository == 'haji84/independent-ai09-reviewer' &&
+      github.event.pull_request.number == 1 &&
+      github.event.review.user.login == 'haji84' &&
+      github.event.review.state == 'commented' &&
+      (github.event.review.body == 'AI09_QWEN14B_SELECTION_8CASE_APPROVED_20261102' ||
+       github.event.review.body == 'AI09_QWEN14B_OUT_OF_SAMPLE_APPROVED_20261102')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      ADVISORY_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      AI09_QUALITY_SUITE: ${{ github.event.review.body == 'AI09_QWEN14B_OUT_OF_SAMPLE_APPROVED_20261102' && 'holdout' || 'smoke' }}
+      OLLAMA_HOST: 127.0.0.1:11434
+      OLLAMA_NUM_PARALLEL: '1'
+      OLLAMA_MAX_LOADED_MODELS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          clean: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+      - name: Require exact SHA, no credentials, disposable runner
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = haji84/independent-ai09-reviewer
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test "$(git rev-parse HEAD)" = "$ADVISORY_HEAD_SHA"
+          node --check src/model-quality-probe.mjs
+      - name: Install vetted hash-pinned Ollama in disposable runner
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --retry 2 --max-time 300 \
+            https://github.com/ollama/ollama/releases/download/v0.34.0/ollama-linux-amd64.tar.zst \
+            -o "$RUNNER_TEMP/ollama-linux-amd64.tar.zst"
+          echo "cf95886728959aa09910bb34de5cca1cc5a8f68003b5597197d3f2c2d57c0804  $RUNNER_TEMP/ollama-linux-amd64.tar.zst" | sha256sum -c -
+          sudo tar --zstd -xf "$RUNNER_TEMP/ollama-linux-amd64.tar.zst" -C /usr
+      - name: "Qwen 14B selection: four unsafe and four safe, then one real short excerpt"
+        run: |
+          set -euo pipefail
+          ollama serve >"$RUNNER_TEMP/ai09-qwen14b-selection.log" 2>&1 &
+          ready=0
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then ready=1; break; fi
+            sleep 2
+          done
+          test "$ready" = 1
+          timeout 600s ollama pull qwen2.5-coder:14b
+          node src/model-quality-probe.mjs
+      - name: Archive source-free quality proof, never an approval
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai09-qwen14b-selection-proof
+          path: ai09-model-quality-proof.json
+          if-no-files-found: warn
+          retention-days: 3
