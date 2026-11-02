@@ -2,6 +2,8 @@
 import {createHash} from 'node:crypto';
 import {readFileSync,lstatSync,writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
+import {outOfSampleControls,auditOutOfSample} from './quality-holdout.mjs';
+import {auditReviewReceipts} from './receipt-coverage.mjs';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 const fail=c=>{throw Error(c)};
 const MODEL='qwen2.5-coder:14b', SHA=/^[a-f0-9]{40}$/u;
@@ -184,7 +186,28 @@ export function scoreModelCalibration(fixtures,records){
    passed,formalGitHubApproval:false,modelPromotionAuthorized:false};
 }
 
+
+/** Four-gate advisory. Never treats a caller-supplied status as identity proof.
+ * Formal approval and Git object/source provenance require separately trusted checks.
+ */
+export function assessCompositeAdvisory({manifest=null,receipts=[],
+ expectedBaseSha,expectedHeadSha,smokeRecords=[],holdoutRecords=[]}={}){
+ const mechanical=auditReviewReceipts(manifest,receipts,{expectedBaseSha,expectedHeadSha});
+ const smoke=scoreModelCalibration(pairedSecurityControls(),smokeRecords);
+ const holdout=scoreModelCalibration(outOfSampleControls(),holdoutRecords);
+ return {status:'HOLD',mechanicalStatus:mechanical.status,
+   mechanicalMetadataComplete:mechanical.status==='SOURCE_SLICES_REVIEWED_ADVISORY_ONLY',
+   sourceGitBlobProvenance:'UNVERIFIED',crossFileFindings:'UNVERIFIED',
+   modelSmoke:smoke.status,modelSmokePassed:smoke.passed,
+   outOfSample:holdout.status,outOfSamplePassed:holdout.passed,
+   independentModelIdentity:'UNVERIFIED',
+   authenticatedSeparateGitHubApproval:'REQUIRED_NOT_CHECKED',
+   mergeAuthorized:false,productionDeploymentAuthorized:false};
+}
+
+const SUITE=process.env.AI09_QUALITY_SUITE??'smoke';
 const proof={kind:'BOUNDED_QWEN14B_SELECTION_NOT_FORMAL_APPROVAL',
+ suite:SUITE,outOfSampleDatasetSha256:null,
  reviewerSha:process.env.ADVISORY_HEAD_SHA??null,
  model:MODEL,modelDigest:null,modelIdentityTrusted:false,cases:[],status:'BLOCKED',
  calibration:{status:'BENCHMARK_NOT_RUN'},
@@ -200,17 +223,20 @@ async function run(){
  proof.modelDigest=(await tags.json()).models?.find(x=>x.name===MODEL||x.model===MODEL)?.digest??null;
  if(!/^[a-f0-9]{64}$/u.test(proof.modelDigest??''))
    fail('AI09_QUALITY_MODEL_DIGEST_MISSING');
- const real=readRealExcerpt();
- const cases=[
-  ...pairedSecurityControls(),
-  {id:'REAL_APPROVAL_GATE_EXCERPT',kind:'real-source',maxLine:real.end,
+ if(!['smoke','holdout'].includes(SUITE))fail('AI09_QUALITY_SUITE_INVALID');
+ const controls=SUITE==='holdout'?outOfSampleControls():pairedSecurityControls();
+ if(SUITE==='holdout')proof.outOfSampleDatasetSha256=
+   auditOutOfSample(pairedSecurityControls(),controls).datasetSha256;
+ const real=SUITE==='smoke'?readRealExcerpt():null;
+ const cases=[...controls,...(real?[{
+   id:'REAL_APPROVAL_GATE_EXCERPT',kind:'real-source',maxLine:real.end,
    focus:'Find only a concrete bypass of a different human APPROVED review on exact current SHA or an unresolved change request. Missing code context means INCONCLUSIVE.',
-   code:real.snippet,source:real}
- ];
+   code:real.snippet,source:real
+ }]:[])];
  for(const item of cases){
    // The real source is never sent to a model if either calibration direction fails.
    if(item.kind==='real-source'){
-     proof.calibration=scoreModelCalibration(pairedSecurityControls(),
+     proof.calibration=scoreModelCalibration(controls,
        proof.cases.filter(r=>r.kind!=='real-source'));
      if(!proof.calibration.passed){proof.status='CALIBRATION_FAILED';break;}
    }
@@ -251,6 +277,12 @@ async function run(){
      ' CATEGORY='+record.category+' LINE='+record.line);
  }
  if(await liveHead()!==head)fail('AI09_QUALITY_TARGET_MOVED');
+ if(SUITE==='holdout'){
+   proof.calibration=scoreModelCalibration(controls,proof.cases);
+   proof.status=proof.calibration.passed?
+     'OUT_OF_SAMPLE_ADVISORY_PASSED':'OUT_OF_SAMPLE_CALIBRATION_FAILED';
+   return;
+ }
  if(proof.status==='CALIBRATION_FAILED')return;
  const realCase=proof.cases.find(x=>x.id==='REAL_APPROVAL_GATE_EXCERPT');
  if(!realCase){proof.status='CALIBRATION_INCOMPLETE';return;}
@@ -265,7 +297,8 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
    proof.status='BLOCKED';
  }finally{
    if(proof.calibration.status==='BENCHMARK_NOT_RUN'){
-     try{proof.calibration=scoreModelCalibration(pairedSecurityControls(),
+     try{proof.calibration=scoreModelCalibration(SUITE==='holdout'?
+       outOfSampleControls():pairedSecurityControls(),
        proof.cases.filter(r=>r.kind!=='real-source'));}
      catch{proof.calibration={status:'BENCHMARK_SCORE_INVALID'};proof.status='BLOCKED';}
    }
@@ -274,7 +307,8 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
      {flag:'wx',mode:0o600});
    console.log('AI09_QWEN14B_QUALITY_STATUS='+proof.status);
    console.log('AI09_FORMAL_GITHUB_APPROVED=false');
-   if(['BLOCKED','CALIBRATION_FAILED','CALIBRATION_INCOMPLETE'].includes(proof.status))
+   if(['BLOCKED','CALIBRATION_FAILED','CALIBRATION_INCOMPLETE',
+     'OUT_OF_SAMPLE_CALIBRATION_FAILED'].includes(proof.status))
      process.exitCode=1;
  }
 }

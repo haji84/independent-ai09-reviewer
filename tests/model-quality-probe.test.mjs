@@ -136,3 +136,59 @@ test('duplicate and unknown model receipts cannot count as reviewed',()=>{
  assert.equal(r.invalid,8);
  assert.equal(r.fp,0);assert.equal(r.fn,0);
 });
+
+test('new out-of-sample suite has 16 distinct balanced examples and no prior code repeats',()=>{
+ const {outOfSampleControls,auditOutOfSample}=await import('../src/quality-holdout.mjs');
+ const cases=outOfSampleControls();
+ const scope=auditOutOfSample(pairedSecurityControls(),cases);
+ assert.deepEqual([scope.count,scope.unsafe,scope.safe],[16,8,8]);
+ assert.match(scope.datasetSha256,/^[a-f0-9]{64}$/u);
+ assert.equal(scope.classification,'PUBLIC_OUT_OF_SAMPLE_NOT_PRIVATE_BLIND');
+ for(const family of ['AUTH','SECRET','APPROVAL','CHECKPOINT']){
+   assert.equal(cases.filter(x=>x.family===family&&x.expected==='CHANGES_REQUESTED').length,2);
+   assert.equal(cases.filter(x=>x.family===family&&x.expected==='NO_FINDINGS').length,2);
+ }
+});
+test('out-of-sample TP/TN, FP/FN, abstain, and invalid stay separate',()=>{
+ const {outOfSampleControls}=await import('../src/quality-holdout.mjs');
+ const fixtures=outOfSampleControls();
+ const all=fixtures.map(x=>({id:x.id,verdict:x.expected,
+  category:x.expected==='CHANGES_REQUESTED'?x.expectedCategory:'NONE',line:2}));
+ const correct=scoreModelCalibration(fixtures,all);
+ assert.deepEqual([correct.total,correct.positive,correct.negative],[16,8,8]);
+ assert.equal(correct.passed,true);
+ assert.equal(correct.modelPromotionAuthorized,false);
+ const changed=all.map((r,i)=>i===0?{...r,verdict:'NO_FINDINGS',category:'NONE'}:
+  i===1?{...r,verdict:'CHANGES_REQUESTED',category:'AUTH'}:
+  i===2?{...r,verdict:'INCONCLUSIVE',category:'NONE'}:
+  i===3?{...r,verdict:'INVALID'}:r);
+ const scored=scoreModelCalibration(fixtures,changed);
+ assert.equal(scored.fn,1);assert.equal(scored.fp,1);
+ assert.equal(scored.abstain,1);assert.equal(scored.invalid,1);
+ assert.equal(scored.passed,false);
+});
+test('holdout rejects old smoke code, duplicate labels, and changed balance',()=>{
+ const {outOfSampleControls,auditOutOfSample}=await import('../src/quality-holdout.mjs');
+ const cases=outOfSampleControls(),smoke=pairedSecurityControls();
+ assert.throws(()=>auditOutOfSample(smoke,[...cases.slice(0,-1),cases[0]]),/AI09_HOLDOUT_FIXTURE_INVALID/u);
+ assert.throws(()=>auditOutOfSample(smoke,[...cases.slice(0,-1),
+  {...cases[15],code:smoke[0].code,maxLine:smoke[0].maxLine}]),/AI09_HOLDOUT_CODE_COLLISION/u);
+ assert.throws(()=>auditOutOfSample(smoke,[...cases.slice(0,-1),
+  {...cases[15],expected:'CHANGES_REQUESTED',expectedCategory:'CHECKPOINT'}]),
+  /AI09_HOLDOUT_UNBALANCED/u);
+});
+test('four-stage advisory never converts synthetic success to authenticated approval',()=>{
+ const {assessCompositeAdvisory}=await import('../src/model-quality-probe.mjs');
+ const {outOfSampleControls}=await import('../src/quality-holdout.mjs');
+ const outcome=fixtures=>fixtures.map(x=>({id:x.id,verdict:x.expected,
+  category:x.expected==='CHANGES_REQUESTED'?x.expectedCategory:'NONE',line:2}));
+ const summary=assessCompositeAdvisory({
+  smokeRecords:outcome(pairedSecurityControls()),
+  holdoutRecords:outcome(outOfSampleControls())});
+ assert.equal(summary.modelSmokePassed,true);
+ assert.equal(summary.outOfSamplePassed,true);
+ assert.equal(summary.mechanicalStatus,'BLOCKED');
+ assert.equal(summary.sourceGitBlobProvenance,'UNVERIFIED');
+ assert.equal(summary.authenticatedSeparateGitHubApproval,'REQUIRED_NOT_CHECKED');
+ assert.equal(summary.mergeAuthorized,false);
+});

@@ -28,6 +28,7 @@ jobs:
           node --check src/verify-independent-approval.mjs
           node --check src/model-advisory-gemma.mjs
           node --check src/model-quality-probe.mjs
+          node --check src/quality-holdout.mjs
           node --test tests/review-schema.test.mjs tests/receipt-coverage.test.mjs tests/receipt-ledger.test.mjs tests/checkpoint-seal.test.mjs tests/private-findings.test.mjs tests/verify-independent-approval.test.mjs tests/model-advisory-gemma.test.mjs tests/model-quality-probe.test.mjs
 
   separate-gemma-advisory:
@@ -98,11 +99,13 @@ jobs:
       github.event.pull_request.number == 1 &&
       github.event.review.user.login == 'haji84' &&
       github.event.review.state == 'commented' &&
-      github.event.review.body == 'AI09_QWEN14B_SELECTION_8CASE_APPROVED_20261102'
+      (github.event.review.body == 'AI09_QWEN14B_SELECTION_8CASE_APPROVED_20261102' ||
+       github.event.review.body == 'AI09_QWEN14B_OUT_OF_SAMPLE_APPROVED_20261102')
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       ADVISORY_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      AI09_QUALITY_SUITE: ${{ github.event.review.body == 'AI09_QWEN14B_OUT_OF_SAMPLE_APPROVED_20261102' && 'holdout' || 'smoke' }}
       OLLAMA_HOST: 127.0.0.1:11434
       OLLAMA_NUM_PARALLEL: '1'
       OLLAMA_MAX_LOADED_MODELS: '1'
