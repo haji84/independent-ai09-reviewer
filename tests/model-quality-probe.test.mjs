@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseQualityPacket,selectLineWindow} from '../src/model-quality-gemma4b.mjs';
-const pkt=o=>({model:'gemma3:4b',done:true,done_reason:'stop',
+import {parseQualityPacket,selectLineWindow} from '../src/model-quality-probe.mjs';
+const pkt=o=>({model:'deepseek-coder:6.7b-instruct',done:true,done_reason:'stop',
  message:{content:JSON.stringify(o)}});
 test('known-bad and defensive verdicts retain bounded code locations',()=>{
  assert.deepEqual(parseQualityPacket(pkt({verdict:'CHANGES_REQUESTED',category:'AUTH',line:2}),3),
@@ -19,7 +19,7 @@ test('contradictory, forged or out-of-window results are blocked',()=>{
   {verdict:'CHANGES_REQUESTED',category:'AUTH',line:-1},
   {verdict:'NO_FINDINGS',category:'NONE',line:1},
   {verdict:'CHANGES_REQUESTED',category:'AUTH',line:2,token:'secret'},
- ])assert.throws(()=>parseQualityPacket(pkt(x),5),/AI09_4B_SCHEMA_INVALID/u);
+ ])assert.throws(()=>parseQualityPacket(pkt(x),5),/AI09_QUALITY_SCHEMA_INVALID/u);
 });
 test('wrong model, incomplete and non-JSON responses fail',()=>{
  for(const x of [
@@ -27,7 +27,7 @@ test('wrong model, incomplete and non-JSON responses fail',()=>{
   {...pkt({verdict:'NO_FINDINGS',category:'NONE',line:0}),model:'gemma3:1b'},
   {...pkt({verdict:'NO_FINDINGS',category:'NONE',line:0}),done_reason:'length'},
   {...pkt({verdict:'NO_FINDINGS',category:'NONE',line:0}),message:{content:'not-json'}}
- ])assert.throws(()=>parseQualityPacket(x,3),/AI09_4B_/u);
+ ])assert.throws(()=>parseQualityPacket(x,3),/AI09_QUALITY_/u);
 });
 test('line windows are bounded, literal and preserve source numbering',()=>{
  assert.deepEqual(selectLineWindow('a\nb\nc\nd\n',2,3),
