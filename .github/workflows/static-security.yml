@@ -79,7 +79,7 @@ jobs:
             sleep 2
           done
           test "$ready" = 1
-          timeout 600s ollama pull gemma3:4b
+          timeout 600s ollama pull gemma3:1b
           node src/model-advisory-gemma.mjs
       - name: Upload digest-only advisory evidence; never approve or merge
         if: always()

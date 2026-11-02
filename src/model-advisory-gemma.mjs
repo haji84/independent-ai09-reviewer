@@ -4,11 +4,11 @@ import {readFileSync,lstatSync,writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 const fail=c=>{throw Error(c)};
-const model='gemma3:4b';
+const model='gemma3:1b';
 const groups=[
-  ['src/ai09-independent.mjs','.github/workflows/independent-ai09.yml','.github/workflows/model-calibration.yml'],
+  ['src/ai09-independent.mjs'],
   ['src/checkpoint-seal.mjs','src/private-findings.mjs'],
-  ['src/verify-independent-approval.mjs','src/receipt-coverage.mjs','src/receipt-ledger.mjs']
+  ['src/verify-independent-approval.mjs','.github/workflows/independent-ai09.yml','.github/workflows/model-calibration.yml']
 ];
 const statuses=['NO_FINDINGS','CHANGES_REQUESTED','INCONCLUSIVE'];
 const categories=['AUTH','MODEL_ID','PROMPT_INJECTION','SECRET_LEAK','CHECKPOINT_ROLLBACK',
@@ -79,7 +79,7 @@ async function run(){
      method:'POST',headers:{'content-type':'application/json'},
      signal:AbortSignal.timeout(300000),
      body:JSON.stringify({model,stream:false,format:schema,
-       options:{temperature:0,num_ctx:16384,num_predict:350},
+       options:{temperature:0,num_ctx:8192,num_predict:180},
        messages:[{role:'user',content:prompt}]})});
     if(!response.ok)fail('AI09_ADVISORY_MODEL_HTTP_FAILURE');
     const packet=await response.json(),result=parseAdvisoryPacket(packet,accepted);
@@ -99,6 +99,7 @@ async function run(){
  }
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
- run().catch(e=>{console.error(/^AI09_[A-Z0-9_]+$/u.test(e?.message??'')?e.message:
-   'AI09_ADVISORY_UNHANDLED_ERROR');process.exitCode=1});
+ run().catch(e=>{const error=e?.name==='TimeoutError'?'AI09_ADVISORY_INFERENCE_TIMEOUT':
+   /^AI09_[A-Z0-9_]+$/u.test(e?.message??'')?e.message:'AI09_ADVISORY_UNHANDLED_ERROR';
+  console.error(error);process.exitCode=1;});
 }

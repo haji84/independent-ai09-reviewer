@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseAdvisoryPacket} from '../src/model-advisory-gemma.mjs';
-const pkt=o=>({model:'gemma3:4b',done:true,done_reason:'stop',
+const pkt=o=>({model:'gemma3:1b',done:true,done_reason:'stop',
  message:{content:JSON.stringify(o)}});
 const paths={'src/checkpoint-seal.mjs':88};
 test('distinct-model structured findings retain path and line without free text',()=>{
