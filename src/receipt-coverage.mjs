@@ -132,7 +132,8 @@ export function auditReviewReceipts(manifest, receipts, {expectedBaseSha,expecte
             !Number.isSafeInteger(record.findingCount) ||
             record.findingCount < 0 || record.findingCount > 20 ||
             (record.status === 'NO_ACTIONABLE_FINDINGS' && record.findingCount !== 0) ||
-            (record.status === 'CHANGES_REQUESTED' && record.findingCount === 0))
+            (record.status === 'CHANGES_REQUESTED' && record.findingCount === 0) ||
+            (record.status === 'INCONCLUSIVE' && record.findingCount !== 0))
           error('AI09_SLICE_RECEIPT_INVALID');
         if (record.status === 'INCONCLUSIVE') {
           inconclusiveSlices++;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,rmSync,writeFileSync,symlinkSync,readFileSync} from 'node:fs';
+import {mkdtempSync,rmSync,writeFileSync,symlinkSync,readFileSync,chmodSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -49,4 +49,13 @@ test('symlink is rejected, partial ledger remains incomplete',()=>withDir(dir=>{
   assert.equal(readReviewLedger(dir,manifest).status,'REVIEW_PARTIAL');
   symlinkSync('/nonexistent/path',join(dir,'shard-1.json'));
   assert.throws(()=>readReviewLedger(dir,manifest),/FILE_UNSAFE/u);
+}));
+
+test('ledger refuses non-private directory permissions before writing',()=>withDir(dir=>{
+  const {manifest,receipt}=fixture();
+  chmodSync(dir,0o755);
+  assert.throws(()=>writeReviewReceipt(dir,manifest,receipt),/AI09_LEDGER_DIRECTORY_UNSAFE/u);
+  assert.throws(()=>readReviewLedger(dir,manifest),/AI09_LEDGER_DIRECTORY_UNSAFE/u);
+  chmodSync(dir,0o700);
+  assert.equal(writeReviewReceipt(dir,manifest,receipt).stored,true);
 }));

@@ -9,11 +9,15 @@ const resultKeys=['findingCount','requestSha256','responseSha256','reviewSha256'
 const sameKeys=(x, expected)=>x && typeof x==='object' && !Array.isArray(x) &&
   Object.keys(x).sort().join(',')===expected.join(',');
 function location(directory){
-  if (typeof directory!=='string' || !isAbsolute(directory) || !lstatSync(directory).isDirectory() ||
-      lstatSync(directory).isSymbolicLink()) fail('AI09_LEDGER_DIRECTORY_UNSAFE');
+  if (typeof directory!=='string' || !isAbsolute(directory))
+    fail('AI09_LEDGER_DIRECTORY_UNSAFE');
+  const stat=lstatSync(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o077)!==0 ||
+      (typeof process.getuid==='function' && stat.uid!==process.getuid()))
+    fail('AI09_LEDGER_DIRECTORY_UNSAFE');
   return directory;
 }
-function safeRecord(receipt){
+export function assertSafeReceiptFields(receipt){
   if (!sameKeys(receipt,receiptKeys) || !Array.isArray(receipt.sliceResults) ||
       !receipt.sliceResults.every(r=>sameKeys(r,resultKeys)))
     fail('AI09_LEDGER_SENSITIVE_OR_UNEXPECTED_FIELDS');
@@ -23,7 +27,7 @@ function safeRecord(receipt){
  * Caller must provision a private local directory, never a public workspace.
  */
 export function writeReviewReceipt(directory,manifest,receipt){
-  const root=location(directory);safeRecord(receipt);
+  const root=location(directory);assertSafeReceiptFields(receipt);
   const inspected=auditReviewReceipts(manifest,[receipt],{expectedBaseSha:manifest.baseSha,expectedHeadSha:manifest.headSha});
   if(inspected.status==='BLOCKED')fail(inspected.reason);
   const id=receipt.shardId;
@@ -51,7 +55,7 @@ export function readReviewLedger(directory,manifest){
       fail('AI09_LEDGER_FILE_UNSAFE');
     let r;try{r=JSON.parse(readFileSync(path,'utf8'));}
     catch{fail('AI09_LEDGER_JSON_INVALID');}
-    safeRecord(r);
+    assertSafeReceiptFields(r);
     if(String(r.shardId)!==match[1])fail('AI09_LEDGER_SHARD_NAME_MISMATCH');
     receipts.push(r);
   }

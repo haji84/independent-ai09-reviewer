@@ -19,4 +19,5 @@ jobs:
           node --check src/review-schema.mjs
           node --check src/receipt-coverage.mjs
           node --check src/receipt-ledger.mjs
-          node --test tests/review-schema.test.mjs tests/receipt-coverage.test.mjs tests/receipt-ledger.test.mjs
+          node --check src/checkpoint-seal.mjs
+          node --test tests/review-schema.test.mjs tests/receipt-coverage.test.mjs tests/receipt-ledger.test.mjs tests/checkpoint-seal.test.mjs

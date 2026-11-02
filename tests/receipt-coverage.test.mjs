@@ -129,3 +129,13 @@ test('unresolved slices in a partial receipt are never reported clean',()=>{
   assert.equal(partial.inconclusiveSlices,24);
   assert.equal(partial.githubApprovalSatisfied,false);
 });
+
+test('inconclusive slice with nonzero findings count must fail rather than conceal contradictory evidence',()=>{
+  const {manifest,receipt}=fixture({files:1});
+  const r=receipt(manifest.shards[0],'INCONCLUSIVE');
+  r.sliceResults[0].findingCount=1;
+  r.evidenceSha256=h(JSON.stringify(r.sliceResults));
+  const result=auditReviewReceipts(manifest,[r]);
+  assert.equal(result.status,'BLOCKED');
+  assert.equal(result.reason,'AI09_SLICE_RECEIPT_INVALID');
+});
