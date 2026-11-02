@@ -137,7 +137,7 @@ test('duplicate and unknown model receipts cannot count as reviewed',()=>{
  assert.equal(r.fp,0);assert.equal(r.fn,0);
 });
 
-test('new out-of-sample suite has 16 distinct balanced examples and no prior code repeats',()=>{
+test('new out-of-sample suite has 16 distinct balanced examples and no prior code repeats',async()=>{
  const {outOfSampleControls,auditOutOfSample}=await import('../src/quality-holdout.mjs');
  const cases=outOfSampleControls();
  const scope=auditOutOfSample(pairedSecurityControls(),cases);
@@ -149,7 +149,7 @@ test('new out-of-sample suite has 16 distinct balanced examples and no prior cod
    assert.equal(cases.filter(x=>x.family===family&&x.expected==='NO_FINDINGS').length,2);
  }
 });
-test('out-of-sample TP/TN, FP/FN, abstain, and invalid stay separate',()=>{
+test('out-of-sample TP/TN, FP/FN, abstain, and invalid stay separate',async()=>{
  const {outOfSampleControls}=await import('../src/quality-holdout.mjs');
  const fixtures=outOfSampleControls();
  const all=fixtures.map(x=>({id:x.id,verdict:x.expected,
@@ -167,7 +167,7 @@ test('out-of-sample TP/TN, FP/FN, abstain, and invalid stay separate',()=>{
  assert.equal(scored.abstain,1);assert.equal(scored.invalid,1);
  assert.equal(scored.passed,false);
 });
-test('holdout rejects old smoke code, duplicate labels, and changed balance',()=>{
+test('holdout rejects old smoke code, duplicate labels, and changed balance',async()=>{
  const {outOfSampleControls,auditOutOfSample}=await import('../src/quality-holdout.mjs');
  const cases=outOfSampleControls(),smoke=pairedSecurityControls();
  assert.throws(()=>auditOutOfSample(smoke,[...cases.slice(0,-1),cases[0]]),/AI09_HOLDOUT_FIXTURE_INVALID/u);
@@ -177,7 +177,7 @@ test('holdout rejects old smoke code, duplicate labels, and changed balance',()=
   {...cases[15],expected:'CHANGES_REQUESTED',expectedCategory:'CHECKPOINT'}]),
   /AI09_HOLDOUT_UNBALANCED/u);
 });
-test('four-stage advisory never converts synthetic success to authenticated approval',()=>{
+test('four-stage advisory never converts synthetic success to authenticated approval',async()=>{
  const {assessCompositeAdvisory}=await import('../src/model-quality-probe.mjs');
  const {outOfSampleControls}=await import('../src/quality-holdout.mjs');
  const outcome=fixtures=>fixtures.map(x=>({id:x.id,verdict:x.expected,
