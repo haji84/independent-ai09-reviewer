@@ -5,7 +5,7 @@ import {mkdtempSync,rmSync,readFileSync,writeFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {sealReviewCheckpoint,openReviewCheckpoint} from '../src/checkpoint-seal.mjs';
+import {sealReviewCheckpoint,openReviewCheckpoint,checkpointEnvelopeSha256} from '../src/checkpoint-seal.mjs';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 const reviewerSha='c'.repeat(40),baseSha='a'.repeat(40),headSha='b'.repeat(40);
 function fixture(){
@@ -30,7 +30,7 @@ test('checkpoint is encrypted, resumable and never an approval',()=>{
   const {manifest,receipt}=fixture(),key=randomBytes(32);
   const sealed=sealReviewCheckpoint(manifest,[receipt],reviewerSha,key);
   assert.equal(JSON.stringify(sealed).includes('AI09-reviewer'),false);
-  const opened=openReviewCheckpoint(sealed,manifest,reviewerSha,key);
+  const opened=openReviewCheckpoint(sealed,manifest,reviewerSha,key,{trustedLatestCheckpointSha256:checkpointEnvelopeSha256(sealed)});
   assert.deepEqual(opened.receipts,[receipt]);
   assert.equal(opened.state.status,'SOURCE_SLICES_REVIEWED_ADVISORY_ONLY');
   assert.equal(opened.state.mergeAuthorized,false);
@@ -38,11 +38,11 @@ test('checkpoint is encrypted, resumable and never an approval',()=>{
 test('wrong key, corrupted ciphertext, stale reviewer and target all reject',()=>{
   const {manifest,receipt}=fixture(),key=randomBytes(32);
   const sealed=sealReviewCheckpoint(manifest,[receipt],reviewerSha,key);
-  assert.throws(()=>openReviewCheckpoint(sealed,manifest,reviewerSha,randomBytes(32)),/AUTH_FAILED/u);
+  assert.throws(()=>openReviewCheckpoint(sealed,manifest,reviewerSha,randomBytes(32),{trustedLatestCheckpointSha256:checkpointEnvelopeSha256(sealed)}),/AUTH_FAILED/u);
   const flip=sealed.ciphertext.slice(0,-1)+(sealed.ciphertext.endsWith('A')?'B':'A');
-  assert.throws(()=>openReviewCheckpoint({...sealed,ciphertext:flip},manifest,reviewerSha,key),/AUTH_FAILED/u);
-  assert.throws(()=>openReviewCheckpoint(sealed,manifest,'d'.repeat(40),key),/SCOPE_OR_FORMAT_INVALID/u);
-  assert.throws(()=>openReviewCheckpoint(sealed,{...manifest,headSha:'d'.repeat(40)},reviewerSha,key),/SCOPE_OR_FORMAT_INVALID/u);
+  assert.throws(()=>openReviewCheckpoint({...sealed,ciphertext:flip},manifest,reviewerSha,key,{trustedLatestCheckpointSha256:checkpointEnvelopeSha256(sealed)}),/AUTH_FAILED/u);
+  assert.throws(()=>openReviewCheckpoint(sealed,manifest,'d'.repeat(40),key,{trustedLatestCheckpointSha256:checkpointEnvelopeSha256(sealed)}),/SCOPE_OR_FORMAT_INVALID/u);
+  assert.throws(()=>openReviewCheckpoint(sealed,{...manifest,headSha:'d'.repeat(40)},reviewerSha,key,{trustedLatestCheckpointSha256:checkpointEnvelopeSha256(sealed)}),/SCOPE_OR_FORMAT_INVALID/u);
 });
 test('raw source, surprise fields and invalid proof refuse sealing',()=>{
   const {manifest,receipt}=fixture(),key=randomBytes(32);
@@ -62,10 +62,11 @@ test('separate Node processes restore an encrypted checkpoint without persisted 
       {encoding:'utf8',env:{...process.env,AI09_TEST_FIXTURE:args}});
     assert.equal(first.status,0,first.stderr);
     writeFileSync(join(dir,'checkpoint.enc.json'),first.stdout,{mode:0o600});
-    const restoreScript=`import {openReviewCheckpoint} from ${JSON.stringify(moduleUrl)};
+    const restoreScript=`import {openReviewCheckpoint,checkpointEnvelopeSha256} from ${JSON.stringify(moduleUrl)};
       const i=JSON.parse(process.env.AI09_TEST_FIXTURE);
       const envelope=JSON.parse(process.stdin.read()??'null');
-      const r=openReviewCheckpoint(envelope,i.manifest,i.reviewerSha,Buffer.from(i.key,'hex'));
+      const r=openReviewCheckpoint(envelope,i.manifest,i.reviewerSha,Buffer.from(i.key,'hex'),
+        {trustedLatestCheckpointSha256:checkpointEnvelopeSha256(envelope)});
       process.stdout.write(r.state.status);`;
     // Second process receives the envelope over stdin, not from mutable source or repository code.
     const second=spawnSync(process.execPath,['--input-type=module','-e',
@@ -75,4 +76,16 @@ test('separate Node processes restore an encrypted checkpoint without persisted 
     assert.equal(second.status,0,second.stderr);
     assert.equal(second.stdout,'SOURCE_SLICES_REVIEWED_ADVISORY_ONLY');
   }finally{rmSync(dir,{recursive:true,force:true})}
+});
+
+test('old valid checkpoint is rejected against independently trusted newer digest',()=>{
+ const {manifest,receipt}=fixture(),key=randomBytes(32);
+ const older=sealReviewCheckpoint(manifest,[],reviewerSha,key);
+ const newer=sealReviewCheckpoint(manifest,[receipt],reviewerSha,key);
+ const trustedLatestCheckpointSha256=checkpointEnvelopeSha256(newer);
+ assert.notEqual(checkpointEnvelopeSha256(older),trustedLatestCheckpointSha256);
+ assert.throws(()=>openReviewCheckpoint(older,manifest,reviewerSha,key,{trustedLatestCheckpointSha256}),
+   /CHECKPOINT_ROLLBACK_OR_SWAP/u);
+ assert.equal(openReviewCheckpoint(newer,manifest,reviewerSha,key,{trustedLatestCheckpointSha256}).state.receivedShards,1);
+ assert.throws(()=>openReviewCheckpoint(older,manifest,reviewerSha,key),/TRUSTED_LATEST_REQUIRED/u);
 });

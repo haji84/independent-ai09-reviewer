@@ -1,6 +1,6 @@
 // Encrypted portable progress checkpoint. Offline candidate only: no Actions activation.
 // The key is caller-supplied, must never be included in artifacts or repository files.
-import {createCipheriv,createDecipheriv,randomBytes} from 'node:crypto';
+import {createCipheriv,createDecipheriv,createHash,randomBytes} from 'node:crypto';
 import {Buffer} from 'node:buffer';
 import {auditReviewReceipts} from './receipt-coverage.mjs';
 import {assertSafeReceiptFields} from './receipt-ledger.mjs';
@@ -31,6 +31,13 @@ function validated(manifest,receipts){
   return state;
 }
 function authenticatedData(scope){return Buffer.from(JSON.stringify(scope),'utf8')}
+// Caller must obtain this digest from CAS-protected durable state. The
+// ciphertext's own authenticated fields cannot prove it is the LATEST.
+export function checkpointEnvelopeSha256(envelope){
+  if(!exactKeys(envelope,['version','scope','nonce','ciphertext','tag']))
+    fail('AI09_CHECKPOINT_SCOPE_OR_FORMAT_INVALID');
+  return createHash('sha256').update(JSON.stringify(envelope)).digest('hex');
+}
 
 /** Seal SHA-only records under an externally provisioned 256-bit secret.
  * Artifacts may contain only the returned envelope, not the key, prompts, or sources.
@@ -49,8 +56,14 @@ export function sealReviewCheckpoint(manifest,receipts,reviewerSha,key){
     ciphertext:ciphertext.toString('base64url'),tag:cipher.getAuthTag().toString('base64url')};
 }
 
-/** Fail closed on corrupt, replayed, wrong-key or wrong-source checkpoints. */
-export function openReviewCheckpoint(envelope,manifest,reviewerSha,key){
+/** Fail closed unless an independent durable trusted-latest digest matches.
+ * External atomic generation tracking and CAS remain a release prerequisite. */
+export function openReviewCheckpoint(envelope,manifest,reviewerSha,key,
+  {trustedLatestCheckpointSha256}={}){
+  if(!sha256.test(trustedLatestCheckpointSha256??''))
+    fail('AI09_CHECKPOINT_TRUSTED_LATEST_REQUIRED');
+  if(checkpointEnvelopeSha256(envelope)!==trustedLatestCheckpointSha256)
+    fail('AI09_CHECKPOINT_ROLLBACK_OR_SWAP');
   const scope=identity(manifest,reviewerSha),secret=keyBuffer(key);
   if(!exactKeys(envelope,['version','scope','nonce','ciphertext','tag'])||
     envelope.version!==1||!exactKeys(envelope.scope,
