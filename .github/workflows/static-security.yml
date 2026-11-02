@@ -21,4 +21,5 @@ jobs:
           node --check src/receipt-ledger.mjs
           node --check src/checkpoint-seal.mjs
           node --check src/private-findings.mjs
-          node --test tests/review-schema.test.mjs tests/receipt-coverage.test.mjs tests/receipt-ledger.test.mjs tests/checkpoint-seal.test.mjs tests/private-findings.test.mjs
+          node --check src/verify-independent-approval.mjs
+          node --test tests/review-schema.test.mjs tests/receipt-coverage.test.mjs tests/receipt-ledger.test.mjs tests/checkpoint-seal.test.mjs tests/private-findings.test.mjs tests/verify-independent-approval.test.mjs

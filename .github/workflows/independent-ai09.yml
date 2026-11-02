@@ -50,6 +50,8 @@ jobs:
           test "$GITHUB_REF" = refs/heads/main
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           node --check src/ai09-independent.mjs
+      - name: Require separate authenticated GitHub approval
+        run: node src/verify-independent-approval.mjs
       - name: Install SHA256-pinned Ollama on disposable hosted runner
         shell: bash
         run: |
