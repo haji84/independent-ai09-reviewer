@@ -1,11 +1,11 @@
-// Bounded Qwen2.5-Coder 7B selection benchmark. Advisory only; no source execution, GitHub approval or model promotion.
+// Bounded Qwen2.5-Coder 14B selection benchmark on matched 4x4 fixtures. Advisory only.
 import {createHash} from 'node:crypto';
 import {readFileSync,lstatSync,writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 const fail=c=>{throw Error(c)};
-const MODEL='qwen2.5-coder:7b', SHA=/^[a-f0-9]{40}$/u;
-const EXPECTED_MODEL_DIGEST='dae161e27b0e90dd1856c8bb3209201fd6736d8eb66298e75ed87571486f4364';
+const MODEL='qwen2.5-coder:14b', SHA=/^[a-f0-9]{40}$/u;
+// Public selection trial only. The exact 14B model digest is recorded, not yet trusted.
 const verdicts=['NO_FINDINGS','CHANGES_REQUESTED','INCONCLUSIVE'];
 const categories=['NONE','AUTH','APPROVAL','SECRET','CHECKPOINT','OTHER'];
 const schema={type:'object',additionalProperties:false,
@@ -74,7 +74,7 @@ function readRealExcerpt(){
 }
 async function liveHead(){
  const r=await fetch('https://api.github.com/repos/haji84/independent-ai09-reviewer/pulls/1',{
-  headers:{accept:'application/vnd.github+json','user-agent':'ai09-qwen7b-selection'},
+  headers:{accept:'application/vnd.github+json','user-agent':'ai09-qwen14b-selection'},
   signal:AbortSignal.timeout(15000)});
  if(!r.ok)fail('AI09_QUALITY_LIVE_PR_UNAVAILABLE');
  const o=await r.json();
@@ -184,9 +184,9 @@ export function scoreModelCalibration(fixtures,records){
    passed,formalGitHubApproval:false,modelPromotionAuthorized:false};
 }
 
-const proof={kind:'BOUNDED_QWEN7B_SELECTION_NOT_FORMAL_APPROVAL',
+const proof={kind:'BOUNDED_QWEN14B_SELECTION_NOT_FORMAL_APPROVAL',
  reviewerSha:process.env.ADVISORY_HEAD_SHA??null,
- model:MODEL,modelDigest:null,cases:[],status:'BLOCKED',
+ model:MODEL,modelDigest:null,modelIdentityTrusted:false,cases:[],status:'BLOCKED',
  calibration:{status:'BENCHMARK_NOT_RUN'},
  githubApproved:false,mergeAuthorized:false,fullSourceReview:false};
 async function run(){
@@ -198,8 +198,8 @@ async function run(){
  const tags=await fetch('http://127.0.0.1:11434/api/tags',{signal:AbortSignal.timeout(15000)});
  if(!tags.ok)fail('AI09_QUALITY_MODEL_UNAVAILABLE');
  proof.modelDigest=(await tags.json()).models?.find(x=>x.name===MODEL||x.model===MODEL)?.digest??null;
- if(!/^[a-f0-9]{64}$/u.test(proof.modelDigest??'')||proof.modelDigest!==EXPECTED_MODEL_DIGEST)
-   fail('AI09_QUALITY_UNPINNED_OR_CHANGED_MODEL');
+ if(!/^[a-f0-9]{64}$/u.test(proof.modelDigest??''))
+   fail('AI09_QUALITY_MODEL_DIGEST_MISSING');
  const real=readRealExcerpt();
  const cases=[
   ...pairedSecurityControls(),
@@ -247,7 +247,7 @@ async function run(){
      record.reason=e.message;
      record.responseDiagnostics=publicPacketDiagnostics(packet,item.maxLine);
    }
-   console.log('AI09_QWEN7B_PROBE='+item.id+' VERDICT='+record.verdict+
+   console.log('AI09_QWEN14B_PROBE='+item.id+' VERDICT='+record.verdict+
      ' CATEGORY='+record.category+' LINE='+record.line);
  }
  if(await liveHead()!==head)fail('AI09_QUALITY_TARGET_MOVED');
@@ -272,7 +272,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
    proof.evidenceSha256=hash(JSON.stringify(proof));
    writeFileSync('ai09-model-quality-proof.json',JSON.stringify(proof,null,2)+'\n',
      {flag:'wx',mode:0o600});
-   console.log('AI09_QWEN7B_QUALITY_STATUS='+proof.status);
+   console.log('AI09_QWEN14B_QUALITY_STATUS='+proof.status);
    console.log('AI09_FORMAL_GITHUB_APPROVED=false');
    if(['BLOCKED','CALIBRATION_FAILED','CALIBRATION_INCOMPLETE'].includes(proof.status))
      process.exitCode=1;

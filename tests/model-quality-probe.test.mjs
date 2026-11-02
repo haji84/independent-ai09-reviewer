@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseQualityPacket,selectLineWindow,pairedAuthorizationControls,pairedSecurityControls,publicPacketDiagnostics,scoreModelCalibration} from '../src/model-quality-probe.mjs';
-const pkt=o=>({model:'qwen2.5-coder:7b',done:true,done_reason:'stop',
+const pkt=o=>({model:'qwen2.5-coder:14b',done:true,done_reason:'stop',
  message:{content:JSON.stringify(o)}});
 test('known-bad and defensive verdicts retain bounded code locations',()=>{
  assert.deepEqual(parseQualityPacket(pkt({verdict:'CHANGES_REQUESTED',category:'AUTH',line:2}),3),
