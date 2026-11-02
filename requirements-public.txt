@@ -1,0 +1,11 @@
+# Hashes from official PyPI release JSON, verified 2026-10-24.
+# Supported: Ubuntu x86_64 CPython 3.13 CI; Windows x86_64 CPython 3.12 QA.
+--only-binary=:all:
+cryptography==46.0.4 \
+    --hash=sha256:3d425eacbc9aceafd2cb429e42f4e5d5633c6f873f5e567077043ef1b9bbf616 \
+    --hash=sha256:6225d3ebe26a55dbc8ead5ad1265c0403552a63336499564675b29eb3184c09b
+cffi==2.0.0 \
+    --hash=sha256:c8d3b5532fc71b7a77c09192b4a5a200ea992702734a2e9279a37f2478236f26 \
+    --hash=sha256:da68248800ad6320861f129cd9c1bf96ca849a2771a59e0344e88681905916f5
+pycparser==2.23 \
+    --hash=sha256:e5c6e8d3fbad53479cab09ac03729e0a9faf2bee3db8208a550daf5af81a5934

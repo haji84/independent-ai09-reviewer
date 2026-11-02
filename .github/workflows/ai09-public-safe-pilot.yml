@@ -1,0 +1,94 @@
+name: Independent AI09 public-safe 8-chunk pilot (manual only)
+
+# Parked: no input can bypass the unbound admission failure below.
+on:
+  workflow_dispatch:
+    inputs:
+      approved_main_sha:
+        description: Owner-approved final main commit for a future authorized run
+        type: string
+        required: false
+        default: ''
+      input_ciphertext_sha256:
+        description: Owner-approved current data-only ciphertext SHA256
+        type: string
+        required: false
+        default: ''
+      input_ciphertext_bytes:
+        description: Owner-approved ciphertext byte count in canonical decimal
+        type: string
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai09-public-safe-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  admission:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 1
+    permissions: {}
+    steps:
+      - name: Private activation remains closed
+        shell: bash
+        run: |
+          echo 'PRIVATE_ACTIVATION_NOT_AUTHORIZED; DESIGN_APPROVAL=HOLD'
+          exit 1
+
+  isolated-pilot:
+    needs: [admission]
+    if: ${{ needs.admission.result == 'success' && github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' }}
+    environment: ai09-private-pilot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout reviewed public bootstrap without persisted credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Set up isolated Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+
+      - name: Install the existing hash-pinned public dependencies before key access
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --require-hashes -r requirements-public.txt
+
+      - name: Pull only the reviewed public container image before key access
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -I -B -c "import os, pathlib, subprocess, sys; sys.path.insert(0,str(pathlib.Path.cwd())); from tools.sandbox_probe import IMAGE; subprocess.run(['docker', 'pull', IMAGE], env={'PATH':os.defpath}, check=True, timeout=180)"
+
+      - name: Run the reviewed data-only coordinator after admission
+        id: coordinator
+        shell: bash
+        env:
+          AI09_APPROVED_MAIN_SHA: ${{ inputs.approved_main_sha }}
+          AI09_INPUT_CIPHERTEXT_SHA256: ${{ inputs.input_ciphertext_sha256 }}
+          AI09_INPUT_CIPHERTEXT_BYTES: ${{ inputs.input_ciphertext_bytes }}
+          AI09_BUNDLE_KEY_B64: ${{ secrets.AI09_BUNDLE_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          python -I -B tools/private_pilot.py
+
+      - name: Proposed encrypted-only export remains disabled pending final owner approval
+        if: ${{ false && success() && steps.coordinator.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ai09-pilot-encrypted-only-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ai09-private-pilot-${{ github.run_id }}-${{ github.run_attempt }}/ai09-observed-evidence.aesgcm
+          if-no-files-found: error
+          retention-days: 1
