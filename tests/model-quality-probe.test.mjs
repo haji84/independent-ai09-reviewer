@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {parseQualityPacket,selectLineWindow,pairedAuthorizationControls} from '../src/model-quality-probe.mjs';
-const pkt=o=>({model:'deepseek-coder:6.7b-instruct',done:true,done_reason:'stop',
+import {parseQualityPacket,selectLineWindow,pairedAuthorizationControls,pairedSecurityControls} from '../src/model-quality-probe.mjs';
+const pkt=o=>({model:'qwen2.5-coder:7b',done:true,done_reason:'stop',
  message:{content:JSON.stringify(o)}});
 test('known-bad and defensive verdicts retain bounded code locations',()=>{
  assert.deepEqual(parseQualityPacket(pkt({verdict:'CHANGES_REQUESTED',category:'AUTH',line:2}),3),
@@ -45,4 +45,28 @@ test('paired calibration shares a trusted-session threat model and opposite expe
  assert.equal(v[1].expected,'NO_FINDINGS');
  assert.ok(!v[0].code.includes('session.active'));
  assert.ok(v[1].code.includes('session.active'));
+});
+
+
+test('bounded candidate benchmark has four unsafe and four safe controls with explicit expectations',()=>{
+ const all=pairedSecurityControls();
+ assert.equal(all.length,8);
+ assert.equal(new Set(all.map(x=>x.id)).size,8);
+ assert.equal(all.filter(x=>x.expected==='CHANGES_REQUESTED').length,4);
+ assert.equal(all.filter(x=>x.expected==='NO_FINDINGS').length,4);
+ for(const x of all){
+   assert.ok(x.focus.length>50);
+   assert.ok(x.code.startsWith('1: '));
+   assert.ok(x.code.includes('\n'));
+   assert.ok(x.maxLine>=x.code.split('\n').length);
+ }
+ assert.equal(all.find(x=>x.id==='CHECKPOINT_CAS_CHECK').expected,'NO_FINDINGS');
+ assert.equal(all.find(x=>x.id==='SECRET_LOG_LEAK').expectedCategory,'SECRET');
+ assert.equal(all.find(x=>x.id==='APPROVAL_SELF_ACCEPT').expectedCategory,'APPROVAL');
+});
+test('benchmark model parses strict positive and negative multi-category verdicts',()=>{
+ for(const category of ['AUTH','APPROVAL','SECRET','CHECKPOINT']){
+   assert.equal(parseQualityPacket(pkt({verdict:'CHANGES_REQUESTED',category,line:2}),4).category,category);
+ }
+ assert.throws(()=>parseQualityPacket(pkt({verdict:'INCONCLUSIVE',category:'SECRET',line:1}),4),/AI09_QUALITY_SCHEMA_INVALID/u);
 });

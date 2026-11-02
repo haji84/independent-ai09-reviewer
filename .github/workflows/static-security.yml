@@ -98,7 +98,7 @@ jobs:
       github.event.pull_request.number == 1 &&
       github.event.review.user.login == 'haji84' &&
       github.event.review.state == 'commented' &&
-      github.event.review.body == 'AI09_CODER67B_BOUNDED_QUALITY_APPROVED_20261102'
+      github.event.review.body == 'AI09_QWEN7B_SELECTION_8CASE_APPROVED_20261102'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
@@ -131,23 +131,23 @@ jobs:
             -o "$RUNNER_TEMP/ollama-linux-amd64.tar.zst"
           echo "cf95886728959aa09910bb34de5cca1cc5a8f68003b5597197d3f2c2d57c0804  $RUNNER_TEMP/ollama-linux-amd64.tar.zst" | sha256sum -c -
           sudo tar --zstd -xf "$RUNNER_TEMP/ollama-linux-amd64.tar.zst" -C /usr
-      - name: "DeepSeek Coder 6.7B: bounded safety controls and one real excerpt"
+      - name: "Qwen 7B selection: four unsafe and four safe, then one real short excerpt"
         run: |
           set -euo pipefail
-          ollama serve >"$RUNNER_TEMP/ai09-coder67b-quality.log" 2>&1 &
+          ollama serve >"$RUNNER_TEMP/ai09-qwen7b-selection.log" 2>&1 &
           ready=0
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then ready=1; break; fi
             sleep 2
           done
           test "$ready" = 1
-          timeout 600s ollama pull deepseek-coder:6.7b-instruct
+          timeout 600s ollama pull qwen2.5-coder:7b
           node src/model-quality-probe.mjs
       - name: Archive source-free quality proof, never an approval
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ai09-coder67b-bounded-quality-proof
+          name: ai09-qwen7b-selection-proof
           path: ai09-model-quality-proof.json
           if-no-files-found: warn
           retention-days: 3
