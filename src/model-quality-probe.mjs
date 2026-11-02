@@ -58,6 +58,23 @@ async function liveHead(){
    fail('AI09_QUALITY_LIVE_PR_INVALID');
  return o.head.sha;
 }
+// Matched A/B cases: the security policy and trust model are identical.
+// They differ only in whether the code actually checks the owner and active session.
+export function pairedAuthorizationControls(){
+ const focus='Assume session is a trusted, server-authenticated, non-forgeable object. '+
+  'This function is the sole remote-input authorization gate. Assess ONLY whether '+
+  'it checks session.active AND session.ownerId equals device.ownerId before applyInput. '+
+  'Do not assess unrelated input validation or upstream authentication.';
+ return [
+  {id:'KNOWN_AUTH_BYPASS',kind:'synthetic-unsafe',maxLine:3,focus,
+   code:'1: function remoteInput(session,device,command) {\n2:   return device.applyInput(command);\n3: }',
+   expected:'CHANGES_REQUESTED',expectedCategory:'AUTH'},
+  {id:'KNOWN_AUTH_GUARD',kind:'synthetic-defensive',maxLine:4,focus,
+   code:'1: function remoteInput(session,device,command) {\n2:   if(!session || !session.active || session.ownerId!==device.ownerId) throw new Error("FORBIDDEN");\n3:   return device.applyInput(command);\n4: }',
+   expected:'NO_FINDINGS'}
+ ];
+}
+
 const proof={kind:'BOUNDED_CODER67B_QUALITY_PROBE_NOT_FORMAL_APPROVAL',
  reviewerSha:process.env.ADVISORY_HEAD_SHA??null,
  model:MODEL,modelDigest:null,cases:[],status:'BLOCKED',
@@ -74,14 +91,7 @@ async function run(){
  if(!/^[a-f0-9]{64}$/u.test(proof.modelDigest??''))fail('AI09_QUALITY_MODEL_DIGEST_MISSING');
  const real=readRealExcerpt();
  const cases=[
-  {id:'KNOWN_AUTH_BYPASS',kind:'synthetic-unsafe',maxLine:3,
-   focus:'This is the only remotely reachable input handler; there is no upstream authorization. Does it enforce active device-owner authorization?',
-   code:'1: function remoteInput(session,device,command) {\n2:   return device.applyInput(command);\n3: }',
-   expected:'CHANGES_REQUESTED',expectedCategory:'AUTH'},
-  {id:'KNOWN_AUTH_GUARD',kind:'synthetic-defensive',maxLine:4,
-   focus:'Assess ONLY active session/device-owner authorization in this sole input handler, not input sanitization or other issues.',
-   code:'1: function remoteInput(session,device,command) {\n2:   if(!session || !session.active || session.ownerId!==device.ownerId) throw new Error("FORBIDDEN");\n3:   return device.applyInput(command);\n4: }',
-   expected:'NO_FINDINGS'},
+  ...pairedAuthorizationControls(),
   {id:'REAL_APPROVAL_GATE_EXCERPT',kind:'real-source',maxLine:real.end,
    focus:'Find only a concrete bypass of a different human APPROVED review on exact current SHA or an unresolved change request. Missing code context means INCONCLUSIVE.',
    code:real.snippet,source:real}
