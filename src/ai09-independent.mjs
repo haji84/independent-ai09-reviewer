@@ -6,7 +6,7 @@ import {mkdtempSync,mkdirSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {TextDecoder} from 'node:util';
-import {parseSafePublicReview} from './review-schema.mjs';
+import {parseSafePublicReview,summarizePartialModelReview} from './review-schema.mjs';
 const hash=v=>createHash('sha256').update(v).digest('hex');
 const fail=code=>{throw Error(code);};
 const base=process.env.AI09_BASE_SHA??'',head=process.env.AI09_HEAD_SHA??'';
@@ -95,6 +95,7 @@ async function run(){
   // Immutable historical head may still be audited, but never promoted as current.
   review.observedHeadAtStart=liveHead;
   review.staleAtStart=liveHead!==head;
+  if(review.staleAtStart)fail('AI09_TARGET_HEAD_STALE');
   for(const sha of [base,head])if(git('cat-file','-t',sha).trim()!=='commit')
     fail('AI09_COMMIT_MISSING');
   try{git('merge-base','--is-ancestor',base,head);}
@@ -146,7 +147,8 @@ async function run(){
         messages:[{role:'user',content:prompt}]})});
     if(!response.ok)fail('AI09_MODEL_HTTP_ERROR');
     const packet=await response.json(),raw=packet?.message?.content;
-    const entry={id:index+1,path:s.path,side:s.side,start:s.start,end:s.end,
+    const entry={id:index+1,manifestSliceId:slices.indexOf(s)+1,
+      path:s.path,side:s.side,start:s.start,end:s.end,
       sourceSha256:s.sha256,promptSha256:hash(Buffer.from(prompt)),
       responseSha256:typeof raw==='string'?hash(Buffer.from(raw)):null,
       started,modelDigest:review.digest,verdict:'BLOCKED',findings:[]};
@@ -167,9 +169,15 @@ async function run(){
     fail('AI09_MAIN_MOVED_OR_TARGET_MISSING');
   review.observedHeadAtEnd=finalHead;
   review.staleAtEnd=finalHead!==head;
-  // A stale result is strictly historical and must not certify the latest PR.
-  review.status=review.staleAtEnd?'HISTORICAL_PARTIAL_MODEL_REVIEW_ONLY':
-    'PARTIAL_MODEL_REVIEW_PENDING';
+  // Preserve findings and uncertainty; none of these statuses is a full approval.
+  const outcome=summarizePartialModelReview(review.records,review.totalSlices,
+    {stale:review.staleAtEnd});
+  review.status=outcome.status;
+  review.sourceVerdict=outcome.verdict;
+  review.changesRequestedSlices=outcome.changesRequestedSlices;
+  review.inconclusiveSlices=outcome.inconclusiveSlices;
+  review.findingCount=outcome.findingCount;
+  review.pendingSlices=outcome.pendingSlices;
 }
 try{await run();}
 catch(e){review.reason=e?.name==='TimeoutError'?'AI09_MODEL_INFERENCE_TIMEOUT':/^AI09_[A-Z0-9_]+$/u.test(e?.message??'')?e.message:'AI09_UNHANDLED_ERROR';}
@@ -180,5 +188,5 @@ finally{
   console.log('AI09_REVIEW_STATUS='+review.status);
   console.log('AI09_REVIEWED='+review.reviewedSlices+'/'+review.totalSlices);
   console.log('AI09_FORMAL_APPROVAL=false');
-  if(review.status==='BLOCKED')process.exitCode=1;
+  if(review.status!=='PARTIAL_MODEL_REVIEW_PENDING')process.exitCode=1;
 }

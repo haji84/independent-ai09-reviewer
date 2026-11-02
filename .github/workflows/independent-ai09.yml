@@ -23,7 +23,7 @@ jobs:
     timeout-minutes: 25
     env:
       AI09_BASE_SHA: 99d4e1568fa15c7cab48fc343cd5521c0f8c9512
-      AI09_HEAD_SHA: 1924bb2227870f1a4fde1f4f9cd5334d71bc8016
+      AI09_HEAD_SHA: ee2238cdbe0be218d7a2d47bad234c5f0836bf20
       OLLAMA_HOST: 127.0.0.1:11434
       OLLAMA_NUM_PARALLEL: '1'
       OLLAMA_MAX_LOADED_MODELS: '1'

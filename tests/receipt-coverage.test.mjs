@@ -102,3 +102,30 @@ test('tampered source-side range and shard digest fail even when manifest root r
   other.manifestSha256=h(JSON.stringify({...other,manifestSha256:null}));
   assert.equal(auditReviewReceipts(other,[]).reason,'AI09_SHARD_DIGEST_INVALID');
 });
+
+test('actionable findings dominate mixed inconclusive and survive partial aggregation',()=>{
+  const {manifest,receipt}=fixture({files:25});
+  const changed=receipt(manifest.shards[0]);
+  changed.sliceResults[0].status='INCONCLUSIVE';
+  changed.sliceResults[1].status='CHANGES_REQUESTED';
+  changed.sliceResults[1].findingCount=1;
+  changed.status='CHANGES_REQUESTED';
+  changed.evidenceSha256=h(JSON.stringify(changed.sliceResults));
+  const partial=auditReviewReceipts(manifest,[changed]);
+  assert.equal(partial.status,'REVIEW_PARTIAL_WITH_FINDINGS');
+  assert.equal(partial.actionableFindings,1);
+  assert.equal(partial.inconclusiveSlices,1);
+  assert.equal(partial.mergeAuthorized,false);
+  const full=auditReviewReceipts(manifest,manifest.shards.map((s,i)=>i?receipt(s):changed));
+  assert.equal(full.status,'CHANGES_REQUESTED');
+  assert.equal(full.inconclusiveSlices,1);
+  assert.equal(auditReviewReceipts(manifest,[{...changed,status:'INCONCLUSIVE'}]).reason,
+    'AI09_SHARD_VERDICT_CONTRADICTION');
+});
+test('unresolved slices in a partial receipt are never reported clean',()=>{
+  const {manifest,receipt}=fixture({files:25});
+  const partial=auditReviewReceipts(manifest,[receipt(manifest.shards[0],'INCONCLUSIVE')]);
+  assert.equal(partial.status,'REVIEW_PARTIAL_INCONCLUSIVE');
+  assert.equal(partial.inconclusiveSlices,24);
+  assert.equal(partial.githubApprovalSatisfied,false);
+});

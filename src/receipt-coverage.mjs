@@ -96,6 +96,7 @@ export function auditReviewReceipts(manifest, receipts, {expectedBaseSha,expecte
     status:'BLOCKED',reason,pendingShardIds,githubApprovalSatisfied:false,
     independentReviewerAuthenticated:false,crossFileSecurityReviewVerified:false,
     mergeAuthorized:false,evidenceClass:'AI_ASSERTED',
+    actionableFindings:0,inconclusiveSlices:0,
   });
   try {
     const {slices}=verifyManifest(manifest);
@@ -105,6 +106,7 @@ export function auditReviewReceipts(manifest, receipts, {expectedBaseSha,expecte
     if (!Array.isArray(receipts) || receipts.length > manifest.shards.length)
       error('AI09_RECEIPT_LIST_INVALID');
     const received = new Map();
+    let actionableFindings=0,inconclusiveSlices=0;
     for (const receipt of receipts) {
       const shard=manifest.shards[receipt?.shardId-1];
       if (!shard || received.has(receipt.shardId) ||
@@ -132,9 +134,13 @@ export function auditReviewReceipts(manifest, receipts, {expectedBaseSha,expecte
             (record.status === 'NO_ACTIONABLE_FINDINGS' && record.findingCount !== 0) ||
             (record.status === 'CHANGES_REQUESTED' && record.findingCount === 0))
           error('AI09_SLICE_RECEIPT_INVALID');
-        if (record.status === 'INCONCLUSIVE') computedStatus='INCONCLUSIVE';
-        else if (record.status === 'CHANGES_REQUESTED' && computedStatus !== 'INCONCLUSIVE')
+        if (record.status === 'INCONCLUSIVE') {
+          inconclusiveSlices++;
+          if (computedStatus !== 'CHANGES_REQUESTED') computedStatus='INCONCLUSIVE';
+        } else if (record.status === 'CHANGES_REQUESTED') {
+          actionableFindings+=record.findingCount;
           computedStatus='CHANGES_REQUESTED';
+        }
       }
       if (receipt.status !== computedStatus) error('AI09_SHARD_VERDICT_CONTRADICTION');
       received.set(receipt.shardId,receipt);
@@ -142,16 +148,18 @@ export function auditReviewReceipts(manifest, receipts, {expectedBaseSha,expecte
     const pendingShardIds=manifest.shards.filter(s=>!received.has(s.id)).map(s=>s.id);
     const sortedReceipts=[...received.values()].sort((a,b)=>a.shardId-b.shardId);
     const assessedSlices=sortedReceipts.reduce((n,r)=>n+r.evaluatedSliceIds.length,0);
-    const statuses=sortedReceipts.map(r=>r.status);
-    const status=pendingShardIds.length ? 'REVIEW_PARTIAL' :
-      statuses.includes('INCONCLUSIVE') ? 'REVIEW_INCONCLUSIVE' :
-      statuses.includes('CHANGES_REQUESTED') ? 'CHANGES_REQUESTED' :
+    const status=pendingShardIds.length ?
+      actionableFindings ? 'REVIEW_PARTIAL_WITH_FINDINGS' :
+      inconclusiveSlices ? 'REVIEW_PARTIAL_INCONCLUSIVE' : 'REVIEW_PARTIAL' :
+      actionableFindings ? 'CHANGES_REQUESTED' :
+      inconclusiveSlices ? 'REVIEW_INCONCLUSIVE' :
       'SOURCE_SLICES_REVIEWED_ADVISORY_ONLY';
     return {
       status,baseSha:manifest.baseSha,headSha:manifest.headSha,
       manifestSha256:manifest.manifestSha256,
       fileCount:manifest.fileCount,shardCount:manifest.shards.length,
       totalSlices:slices.size,receivedShards:received.size,assessedSlices,
+      actionableFindings,inconclusiveSlices,
       pendingShardIds,advisoryLedgerSha256:digest(JSON.stringify(sortedReceipts)),
       githubApprovalSatisfied:false,independentReviewerAuthenticated:false,
       crossFileSecurityReviewVerified:false,mergeAuthorized:false,evidenceClass:'AI_ASSERTED',
