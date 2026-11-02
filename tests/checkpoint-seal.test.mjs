@@ -40,7 +40,7 @@ test('wrong key, corrupted ciphertext, stale reviewer and target all reject',()=
   const sealed=sealReviewCheckpoint(manifest,[receipt],reviewerSha,key);
   assert.throws(()=>openReviewCheckpoint(sealed,manifest,reviewerSha,randomBytes(32),{trustedLatestCheckpointSha256:checkpointEnvelopeSha256(sealed)}),/AUTH_FAILED/u);
   const flip=sealed.ciphertext.slice(0,-1)+(sealed.ciphertext.endsWith('A')?'B':'A');
-  assert.throws(()=>openReviewCheckpoint({...sealed,ciphertext:flip},manifest,reviewerSha,key,{trustedLatestCheckpointSha256:checkpointEnvelopeSha256(sealed)}),/AUTH_FAILED/u);
+  assert.throws(()=>openReviewCheckpoint({...sealed,ciphertext:flip},manifest,reviewerSha,key,{trustedLatestCheckpointSha256:checkpointEnvelopeSha256(sealed)}),/CHECKPOINT_ROLLBACK_OR_SWAP/u);
   assert.throws(()=>openReviewCheckpoint(sealed,manifest,'d'.repeat(40),key,{trustedLatestCheckpointSha256:checkpointEnvelopeSha256(sealed)}),/SCOPE_OR_FORMAT_INVALID/u);
   assert.throws(()=>openReviewCheckpoint(sealed,{...manifest,headSha:'d'.repeat(40)},reviewerSha,key,{trustedLatestCheckpointSha256:checkpointEnvelopeSha256(sealed)}),/SCOPE_OR_FORMAT_INVALID/u);
 });
